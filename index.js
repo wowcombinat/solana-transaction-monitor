@@ -62,6 +62,7 @@ app.use(express.static('public'));
 app.use(express.json());
 
 async function getNewTransactions() {
+  console.log('Starting getNewTransactions function...');
   const publicKey = new PublicKey(WALLET_ADDRESS);
   console.log(`Checking for new transactions for wallet: ${WALLET_ADDRESS}`);
   
@@ -127,9 +128,11 @@ async function getNewTransactions() {
   } catch (err) {
     console.error('Error fetching signatures:', err);
   }
+  console.log('Finished getNewTransactions function');
 }
 
 // Запускаем проверку новых транзакций сразу и затем каждые 5 минут
+console.log('Setting up initial transaction check and interval');
 getNewTransactions().catch(console.error);
 setInterval(() => {
   console.log('Starting scheduled transaction check');
@@ -158,4 +161,5 @@ app.get('/', (req, res) => {
 app.listen(port, async () => {
   console.log(`Сервер запущен на порту ${port}`);
   await initDatabase();
+  console.log('Database initialized, starting application...');
 });
