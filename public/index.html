@@ -18,24 +18,29 @@
 
     <script>
         async function fetchTransactions() {
-            const response = await fetch('/api/transactions');
-            const transactions = await response.json();
-            const transactionsList = document.getElementById('transactions');
-            transactionsList.innerHTML = '';
-            transactions.forEach(tx => {
-                const li = document.createElement('li');
-                li.className = 'bg-gray-50 p-4 rounded';
-                li.innerHTML = `
-                    <p class="font-semibold">Signature: ${tx.signature || 'Unknown'}</p>
-                    <p class="text-sm text-gray-600">Instruction: ${tx.instruction || 'Unknown'}</p>
-                    <p class="text-sm text-gray-600">Mint Address: ${tx.mint_address || 'Unknown'}</p>
-                    <p class="text-sm text-gray-600">Time: ${new Date(tx.created_at).toLocaleString()}</p>
-                `;
-                transactionsList.appendChild(li);
-            });
+            try {
+                const response = await fetch('/api/transactions');
+                const transactions = await response.json();
+                const transactionsList = document.getElementById('transactions');
+                transactionsList.innerHTML = '';
+                transactions.forEach(tx => {
+                    const li = document.createElement('li');
+                    li.className = 'bg-gray-50 p-4 rounded';
+                    li.innerHTML = `
+                        <p class="font-semibold">Signature: ${tx.signature || 'Unknown'}</p>
+                        <p class="text-sm text-gray-600">Instruction: ${tx.instruction || 'Unknown'}</p>
+                        <p class="text-sm text-gray-600">Mint Address: ${tx.mint_address || 'Unknown'}</p>
+                        <p class="text-sm text-gray-600">Time: ${new Date(tx.created_at).toLocaleString()}</p>
+                    `;
+                    transactionsList.appendChild(li);
+                });
+            } catch (error) {
+                console.error('Error fetching transactions:', error);
+            }
         }
 
         fetchTransactions();
+        // Обновляем список транзакций каждые 10 секунд
         setInterval(fetchTransactions, 10000);
     </script>
 </body>
