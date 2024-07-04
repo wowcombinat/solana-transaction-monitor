@@ -13,7 +13,10 @@ const WALLET_ADDRESS = 'TSLvdd1pWpHVjahSpsvCXUbgwsL3JAcvokwaKt1eokM';
 const connection = new Connection(SOLANA_RPC_URL, 'confirmed');
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
+  max: 20, // увеличиваем максимальное количество соединений
+  idleTimeoutMillis: 30000, // уменьшаем время ожидания неактивного соединения
+  connectionTimeoutMillis: 2000, // уменьшаем время ожидания соединения
 });
 
 async function initDatabase() {
@@ -43,8 +46,8 @@ app.use(express.json());
 
 async function processTransaction(signature) {
   console.log('Processing transaction:', signature);
+  const client = await pool.connect();
   try {
-    const client = await pool.connect();
     const existingTx = await client.query('SELECT * FROM transactions WHERE signature = $1', [signature]);
     
     if (existingTx.rows.length === 0) {
@@ -82,10 +85,10 @@ async function processTransaction(signature) {
     } else {
       console.log('Transaction already exists:', signature);
     }
-    
-    client.release();
   } catch (err) {
     console.error('Error processing transaction:', err);
+  } finally {
+    client.release();
   }
 }
 
@@ -129,6 +132,7 @@ function setupWebSocket() {
 }
 
 app.get('/api/transactions', async (req, res) => {
+  console.time('fetchTransactions');
   const client = await pool.connect();
   try {
     console.log('Attempting to fetch transactions...');
@@ -141,6 +145,7 @@ app.get('/api/transactions', async (req, res) => {
     res.status(500).json({ error: "Error fetching transactions", details: err.message });
   } finally {
     client.release();
+    console.timeEnd('fetchTransactions');
   }
 });
 
@@ -153,4 +158,9 @@ app.listen(port, async () => {
   await initDatabase();
   console.log('Database initialized, starting WebSocket connection...');
   setupWebSocket();
+});
+
+// Добавляем обработчик необработанных ошибок
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
