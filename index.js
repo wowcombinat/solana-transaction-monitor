@@ -19,7 +19,7 @@ const pool = new Pool({
 async function initDatabase() {
   const client = await pool.connect();
   try {
-    console.log('Attempting to create transactions table...');
+    console.log('Attempting to create or update transactions table...');
     await client.query(`
       CREATE TABLE IF NOT EXISTS transactions (
         id SERIAL PRIMARY KEY,
@@ -29,7 +29,17 @@ async function initDatabase() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    console.log('Transactions table created or already exists');
+    // Проверяем наличие колонки instruction и добавляем её, если она отсутствует
+    const result = await client.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name='transactions' AND column_name='instruction'
+    `);
+    if (result.rows.length === 0) {
+      await client.query(`ALTER TABLE transactions ADD COLUMN instruction TEXT`);
+      console.log('Added instruction column to transactions table');
+    }
+    console.log('Transactions table created or updated successfully');
   } catch (err) {
     console.error('Error initializing database:', err);
   } finally {
