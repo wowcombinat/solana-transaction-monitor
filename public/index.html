@@ -33,6 +33,27 @@
             }
         }
 
+        function formatTransaction(tx) {
+            let html = `
+                <p class="font-semibold">Signature: ${tx.signature || 'Unknown'}</p>
+                <p class="text-sm text-gray-600">Block Time: ${new Date(tx.data.blockTime * 1000).toLocaleString()}</p>
+                <p class="text-sm text-gray-600">Slot: ${tx.data.slot}</p>
+            `;
+
+            if (tx.data.transaction && tx.data.transaction.message && tx.data.transaction.message.instructions) {
+                html += '<p class="text-sm font-semibold mt-2">Instructions:</p>';
+                tx.data.transaction.message.instructions.forEach((instruction, index) => {
+                    html += `
+                        <p class="text-sm text-gray-600">
+                            ${index + 1}. Program: ${instruction.programId}
+                        </p>
+                    `;
+                });
+            }
+
+            return html;
+        }
+
         async function updateTransactions() {
             try {
                 const transactions = await fetchTransactionsWithRetry();
@@ -41,12 +62,7 @@
                 transactions.forEach(tx => {
                     const li = document.createElement('li');
                     li.className = 'bg-gray-50 p-4 rounded';
-                    li.innerHTML = `
-                        <p class="font-semibold">Signature: ${tx.signature || 'Unknown'}</p>
-                        <p class="text-sm text-gray-600">Instruction: ${tx.instruction || 'Unknown'}</p>
-                        <p class="text-sm text-gray-600">Mint Address: ${tx.mint_address || 'Unknown'}</p>
-                        <p class="text-sm text-gray-600">Time: ${new Date(tx.created_at).toLocaleString()}</p>
-                    `;
+                    li.innerHTML = formatTransaction(tx);
                     transactionsList.appendChild(li);
                 });
             } catch (error) {
@@ -57,7 +73,6 @@
         }
 
         updateTransactions();
-        // Обновляем список транзакций каждые 10 секунд
         setInterval(updateTransactions, 10000);
     </script>
 </body>
