@@ -15,11 +15,29 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// Middleware
+async function initDatabase() {
+  const client = await pool.connect();
+  try {
+    console.log('Attempting to create transactions table...');
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS transactions (
+        id SERIAL PRIMARY KEY,
+        signature TEXT,
+        logs JSON,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('Transactions table created or already exists');
+  } catch (err) {
+    console.error('Error initializing database:', err);
+  } finally {
+    client.release();
+  }
+}
+
 app.use(express.static('public'));
 app.use(express.json());
 
-// Функция мониторинга кошелька
 async function monitorWallet() {
   const publicKey = new PublicKey(WALLET_ADDRESS);
   console.log(`Мониторинг транзакций для кошелька: ${WALLET_ADDRESS}`);
@@ -30,7 +48,7 @@ async function monitorWallet() {
       console.log('Новая транзакция:', context.signature);
       try {
         const client = await pool.connect();
-        await client.query('INSERT INTO transactions(signature, logs) VALUES($1, $2)', [context.signature, JSON.stringify(logs)]);
+        await client.query('INSERT INTO transactions(signature, logs) VALUES($1, $2)', [context.signature || 'unknown', JSON.stringify(logs)]);
         client.release();
       } catch (err) {
         console.error('Ошибка при сохранении в базу данных:', err);
@@ -40,17 +58,18 @@ async function monitorWallet() {
   );
 }
 
-// Роуты
 app.get('/api/transactions', async (req, res) => {
   try {
     const client = await pool.connect();
+    console.log('Attempting to fetch transactions...');
     const result = await client.query('SELECT * FROM transactions ORDER BY created_at DESC LIMIT 10');
     const transactions = result.rows;
     client.release();
+    console.log(`Fetched ${transactions.length} transactions`);
     res.json(transactions);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Error fetching transactions" });
+    console.error('Error fetching transactions:', err);
+    res.status(500).json({ error: "Error fetching transactions", details: err.message });
   }
 });
 
@@ -69,8 +88,8 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/public/index.html');
 });
 
-// Запуск сервера
-app.listen(port, () => {
+app.listen(port, async () => {
   console.log(`Сервер запущен на порту ${port}`);
+  await initDatabase();
   monitorWallet().catch(console.error);
 });
