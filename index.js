@@ -15,6 +15,29 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
+// Функция для задержки выполнения
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Функция для повторных попыток с экспоненциальной задержкой
+async function retryWithBackoff(fn, maxRetries = 5, initialDelay = 1000) {
+  let retries = 0;
+  while (retries < maxRetries) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (error.message.includes('429 Too Many Requests')) {
+        const waitTime = initialDelay * Math.pow(2, retries);
+        console.log(`Retrying after ${waitTime}ms delay...`);
+        await delay(waitTime);
+        retries++;
+      } else {
+        throw error;
+      }
+    }
+  }
+  throw new Error('Max retries reached');
+}
+
 async function initDatabase() {
   const client = await pool.connect();
   try {
@@ -44,7 +67,9 @@ async function getNewTransactions() {
   console.log(`Checking for new transactions for wallet: ${WALLET_ADDRESS}`);
   
   try {
-    const signatures = await connection.getSignaturesForAddress(publicKey, { limit: 10 });
+    const signatures = await retryWithBackoff(() => 
+      connection.getSignaturesForAddress(publicKey, { limit: 10 })
+    );
     
     for (const signatureInfo of signatures) {
       try {
@@ -53,7 +78,9 @@ async function getNewTransactions() {
         
         if (existingTx.rows.length === 0) {
           console.log('New transaction found:', signatureInfo.signature);
-          const txInfo = await connection.getTransaction(signatureInfo.signature, { maxSupportedTransactionVersion: 0 });
+          const txInfo = await retryWithBackoff(() => 
+            connection.getTransaction(signatureInfo.signature, { maxSupportedTransactionVersion: 0 })
+          );
           
           let instruction = 'Unknown';
           let mintAddress = 'Not found';
@@ -82,14 +109,17 @@ async function getNewTransactions() {
       } catch (err) {
         console.error('Error processing transaction:', err);
       }
+      
+      // Добавляем задержку между обработкой транзакций
+      await delay(1000);
     }
   } catch (err) {
     console.error('Error fetching signatures:', err);
   }
 }
 
-// Запускаем проверку новых транзакций каждые 30 секунд
-setInterval(getNewTransactions, 30000);
+// Запускаем проверку новых транзакций каждые 60 секунд
+setInterval(getNewTransactions, 60000);
 
 app.get('/api/transactions', async (req, res) => {
   try {
