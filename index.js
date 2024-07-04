@@ -11,12 +11,25 @@ const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL;
 const WALLET_ADDRESS = 'TSLvdd1pWpHVjahSpsvCXUbgwsL3JAcvokwaKt1eokM';
 
 const connection = new Connection(SOLANA_RPC_URL, 'confirmed');
+const pool = new Pool({const express = require('express');
+const { Connection, PublicKey } = require('@solana/web3.js');
+const { Pool } = require('pg');
+const WebSocket = require('ws');
+require('dotenv').config();
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL;
+const WALLET_ADDRESS = 'TSLvdd1pWpHVjahSpsvCXUbgwsL3JAcvokwaKt1eokM';
+
+const connection = new Connection(SOLANA_RPC_URL, 'confirmed');
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
-  max: 20, // увеличиваем максимальное количество соединений
-  idleTimeoutMillis: 30000, // уменьшаем время ожидания неактивного соединения
-  connectionTimeoutMillis: 2000, // уменьшаем время ожидания соединения
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
 });
 
 async function initDatabase() {
@@ -28,10 +41,22 @@ async function initDatabase() {
         id SERIAL PRIMARY KEY,
         signature TEXT UNIQUE,
         instruction TEXT,
-        mint_address TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Проверяем наличие колонки mint_address и добавляем её, если она отсутствует
+    const checkColumnQuery = `
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name='transactions' AND column_name='mint_address'
+    `;
+    const columnCheck = await client.query(checkColumnQuery);
+    if (columnCheck.rows.length === 0) {
+      console.log('Adding mint_address column to transactions table...');
+      await client.query('ALTER TABLE transactions ADD COLUMN mint_address TEXT');
+    }
+
     await client.query(`CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions (created_at DESC)`);
     console.log('Transactions table and index created or updated successfully');
   } catch (err) {
@@ -79,8 +104,20 @@ async function processTransaction(signature) {
         }
       }
       
-      await client.query('INSERT INTO transactions(signature, instruction, mint_address) VALUES($1, $2, $3)', 
-        [signature, instruction, mintAddress]);
+      // Проверяем наличие колонки mint_address перед вставкой
+      const checkColumnQuery = `
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name='transactions' AND column_name='mint_address'
+      `;
+      const columnCheck = await client.query(checkColumnQuery);
+      if (columnCheck.rows.length > 0) {
+        await client.query('INSERT INTO transactions(signature, instruction, mint_address) VALUES($1, $2, $3)', 
+          [signature, instruction, mintAddress]);
+      } else {
+        await client.query('INSERT INTO transactions(signature, instruction) VALUES($1, $2)', 
+          [signature, instruction]);
+      }
       console.log(`Saved transaction: ${signature}, Instruction: ${instruction}, Mint: ${mintAddress}`);
     } else {
       console.log('Transaction already exists:', signature);
