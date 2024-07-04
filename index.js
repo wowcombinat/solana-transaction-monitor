@@ -10,7 +10,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 console.log('Configuring environment variables...');
-const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL;
+const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const WALLET_ADDRESS = 'TSLvdd1pWpHVjahSpsvCXUbgwsL3JAcvokwaKt1eokM';
 
 console.log('Initializing Solana connection...');
@@ -20,9 +20,6 @@ console.log('Initializing database pool...');
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
 });
 
 async function initDatabase() {
@@ -34,8 +31,7 @@ async function initDatabase() {
       CREATE TABLE IF NOT EXISTS transactions (
         id SERIAL PRIMARY KEY,
         signature TEXT UNIQUE,
-        instruction TEXT,
-        mint_address TEXT,
+        data JSONB,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -59,37 +55,23 @@ async function processTransaction(signature) {
     const existingTx = await client.query('SELECT * FROM transactions WHERE signature = $1', [signature]);
     
     if (existingTx.rows.length === 0) {
-      const txInfo = await connection.getTransaction(signature, { maxSupportedTransactionVersion: 0 });
+      const txInfo = await connection.getParsedTransaction(signature, { maxSupportedTransactionVersion: 0 });
       
-      let instruction = 'Unknown';
-      let mintAddress = 'Not found';
-      
-      if (txInfo && txInfo.transaction && txInfo.transaction.message && 
-          txInfo.transaction.message.instructions && 
-          txInfo.transaction.message.instructions.length > 0) {
-        const ix = txInfo.transaction.message.instructions[0];
-        if (ix && ix.programId && ix.programId.toBase58) {
-          if (ix.programId.toBase58() === 'PUMP1SoLNVs2WaPz7TnLbkoYoRiKbxWQspYdRPdJszDr') {
-            instruction = 'Pump.Fun: Create';
-            // Поиск mint адреса в инструкциях
-            for (let i = 1; i < txInfo.transaction.message.instructions.length; i++) {
-              const subIx = txInfo.transaction.message.instructions[i];
-              if (subIx && subIx.programId && subIx.programId.toBase58 && 
-                  subIx.programId.toBase58() === 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' &&
-                  subIx.accounts && subIx.accounts.length > 0) {
-                mintAddress = subIx.accounts[0].toBase58();
-                break;
-              }
-            }
-          } else {
-            instruction = `Program: ${ix.programId.toBase58()}`;
-          }
-        }
+      if (txInfo) {
+        const data = {
+          signature: signature,
+          blockTime: txInfo.blockTime,
+          slot: txInfo.slot,
+          meta: txInfo.meta,
+          transaction: txInfo.transaction
+        };
+
+        await client.query('INSERT INTO transactions(signature, data) VALUES($1, $2)', 
+          [signature, JSON.stringify(data)]);
+        console.log(`Saved transaction: ${signature}`);
+      } else {
+        console.log(`No transaction info found for signature: ${signature}`);
       }
-      
-      await client.query('INSERT INTO transactions(signature, instruction, mint_address) VALUES($1, $2, $3)', 
-        [signature, instruction, mintAddress]);
-      console.log(`Saved transaction: ${signature}, Instruction: ${instruction}, Mint: ${mintAddress}`);
     } else {
       console.log('Transaction already exists:', signature);
     }
@@ -146,7 +128,10 @@ app.get('/api/transactions', async (req, res) => {
   try {
     console.log('Attempting to fetch transactions...');
     const result = await client.query('SELECT * FROM transactions ORDER BY created_at DESC LIMIT 10');
-    const transactions = result.rows;
+    const transactions = result.rows.map(row => ({
+      ...row,
+      data: JSON.parse(row.data)
+    }));
     console.log(`Fetched ${transactions.length} transactions`);
     res.json(transactions);
   } catch (err) {
@@ -175,12 +160,10 @@ app.listen(port, async () => {
   }
 });
 
-// Добавляем обработчик необработанных ошибок
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-// Добавляем обработчик необработанных исключений
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
   process.exit(1);
