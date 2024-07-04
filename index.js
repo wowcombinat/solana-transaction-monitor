@@ -23,7 +23,8 @@ async function retryWithBackoff(fn, maxRetries = 5, initialDelay = 5000) {
     try {
       return await fn();
     } catch (error) {
-      if (error.message.includes('429 Too Many Requests')) {
+      console.error(`Error occurred: ${error.message}`);
+      if (error.message.includes('429 Too Many Requests') || error.message.includes('503 Service Unavailable')) {
         const waitTime = initialDelay * Math.pow(2, retries);
         console.log(`Retrying after ${waitTime}ms delay...`);
         await delay(waitTime);
@@ -83,17 +84,25 @@ async function getNewTransactions() {
           let instruction = 'Unknown';
           let mintAddress = 'Not found';
           
-          if (txInfo && txInfo.transaction && txInfo.transaction.message && txInfo.transaction.message.instructions.length > 0) {
+          if (txInfo && txInfo.transaction && txInfo.transaction.message && 
+              txInfo.transaction.message.instructions && 
+              txInfo.transaction.message.instructions.length > 0) {
             const ix = txInfo.transaction.message.instructions[0];
-            if (ix.programId.toBase58() === 'PUMP1SoLNVs2WaPz7TnLbkoYoRiKbxWQspYdRPdJszDr') {
-              instruction = 'Pump.Fun: Create';
-              // Поиск mint адреса в инструкциях
-              for (let i = 1; i < txInfo.transaction.message.instructions.length; i++) {
-                const subIx = txInfo.transaction.message.instructions[i];
-                if (subIx.programId.toBase58() === 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA') {
-                  mintAddress = subIx.accounts[0].toBase58();
-                  break;
+            if (ix && ix.programId && ix.programId.toBase58) {
+              if (ix.programId.toBase58() === 'PUMP1SoLNVs2WaPz7TnLbkoYoRiKbxWQspYdRPdJszDr') {
+                instruction = 'Pump.Fun: Create';
+                // Поиск mint адреса в инструкциях
+                for (let i = 1; i < txInfo.transaction.message.instructions.length; i++) {
+                  const subIx = txInfo.transaction.message.instructions[i];
+                  if (subIx && subIx.programId && subIx.programId.toBase58 && 
+                      subIx.programId.toBase58() === 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' &&
+                      subIx.accounts && subIx.accounts.length > 0) {
+                    mintAddress = subIx.accounts[0].toBase58();
+                    break;
+                  }
                 }
+              } else {
+                instruction = `Program: ${ix.programId.toBase58()}`;
               }
             }
           }
