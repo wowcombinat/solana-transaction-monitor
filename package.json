@@ -1,7 +1,6 @@
 {
   "name": "solana-transaction-monitor",
   "version": "1.0.0",
-  "description": "",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -9,7 +8,10 @@
   "dependencies": {
     "@solana/web3.js": "^1.37.1",
     "dotenv": "^16.0.0",
-    "pg": "^8.7.3",
-    "express": "^4.17.1"
+    "express": "^4.17.1",
+    "pg": "^8.7.3"
+  },
+  "engines": {
+    "node": "20.x"
   }
 }
