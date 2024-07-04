@@ -34,6 +34,10 @@
         }
 
         function formatTransaction(tx) {
+            if (!tx.data) {
+                return `<p>No data available for transaction: ${tx.signature}</p>`;
+            }
+
             let html = `
                 <h3 class="font-bold text-lg mb-2">Transaction Details:</h3>
                 <p><strong>Signature:</strong> ${tx.signature}</p>
