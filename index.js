@@ -31,7 +31,7 @@ async function initDatabase() {
       CREATE TABLE IF NOT EXISTS transactions (
         id SERIAL PRIMARY KEY,
         signature TEXT UNIQUE,
-        data JSONB,
+        data JSON,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -122,7 +122,7 @@ app.get('/api/transactions', async (req, res) => {
     const result = await client.query('SELECT * FROM transactions ORDER BY created_at DESC LIMIT 10');
     const transactions = result.rows.map(row => ({
       ...row,
-      data: JSON.parse(row.data)
+      data: row.data ? JSON.parse(row.data) : null
     }));
     console.log(`Fetched ${transactions.length} transactions`);
     res.json(transactions);
