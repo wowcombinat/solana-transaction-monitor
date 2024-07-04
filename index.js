@@ -22,7 +22,7 @@ async function initDatabase() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS transactions (
         id SERIAL PRIMARY KEY,
-        signature TEXT,
+        signature TEXT UNIQUE,
         instruction TEXT,
         mint_address TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -39,50 +39,57 @@ async function initDatabase() {
 app.use(express.static('public'));
 app.use(express.json());
 
-async function monitorWallet() {
+async function getNewTransactions() {
   const publicKey = new PublicKey(WALLET_ADDRESS);
-  console.log(`Мониторинг транзакций для кошелька: ${WALLET_ADDRESS}`);
+  console.log(`Checking for new transactions for wallet: ${WALLET_ADDRESS}`);
   
-  connection.onLogs(
-    publicKey,
-    async (logs, context) => {
-      console.log('Новая транзакция:', context.signature);
+  try {
+    const signatures = await connection.getSignaturesForAddress(publicKey, { limit: 10 });
+    
+    for (const signatureInfo of signatures) {
       try {
-        const txInfo = await connection.getTransaction(context.signature, { maxSupportedTransactionVersion: 0 });
-        console.log('Transaction info:', JSON.stringify(txInfo, null, 2));
+        const client = await pool.connect();
+        const existingTx = await client.query('SELECT * FROM transactions WHERE signature = $1', [signatureInfo.signature]);
         
-        let instruction = 'Unknown';
-        let mintAddress = 'Not found';
-        
-        if (txInfo && txInfo.transaction && txInfo.transaction.message && txInfo.transaction.message.instructions.length > 0) {
-          const ix = txInfo.transaction.message.instructions[0];
-          if (ix.programId.toBase58() === 'PUMP1SoLNVs2WaPz7TnLbkoYoRiKbxWQspYdRPdJszDr') {
-            instruction = 'Pump.Fun: Create';
-            // Поиск mint адреса в инструкциях
-            for (let i = 1; i < txInfo.transaction.message.instructions.length; i++) {
-              const subIx = txInfo.transaction.message.instructions[i];
-              if (subIx.programId.toBase58() === 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA') {
-                mintAddress = subIx.accounts[0].toBase58();
-                break;
+        if (existingTx.rows.length === 0) {
+          console.log('New transaction found:', signatureInfo.signature);
+          const txInfo = await connection.getTransaction(signatureInfo.signature, { maxSupportedTransactionVersion: 0 });
+          
+          let instruction = 'Unknown';
+          let mintAddress = 'Not found';
+          
+          if (txInfo && txInfo.transaction && txInfo.transaction.message && txInfo.transaction.message.instructions.length > 0) {
+            const ix = txInfo.transaction.message.instructions[0];
+            if (ix.programId.toBase58() === 'PUMP1SoLNVs2WaPz7TnLbkoYoRiKbxWQspYdRPdJszDr') {
+              instruction = 'Pump.Fun: Create';
+              // Поиск mint адреса в инструкциях
+              for (let i = 1; i < txInfo.transaction.message.instructions.length; i++) {
+                const subIx = txInfo.transaction.message.instructions[i];
+                if (subIx.programId.toBase58() === 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA') {
+                  mintAddress = subIx.accounts[0].toBase58();
+                  break;
+                }
               }
             }
           }
-        } else {
-          console.log('Transaction info is incomplete or undefined');
+          
+          await client.query('INSERT INTO transactions(signature, instruction, mint_address) VALUES($1, $2, $3)', 
+            [signatureInfo.signature, instruction, mintAddress]);
+          console.log(`Saved transaction: ${signatureInfo.signature}, Instruction: ${instruction}, Mint: ${mintAddress}`);
         }
         
-        const client = await pool.connect();
-        await client.query('INSERT INTO transactions(signature, instruction, mint_address) VALUES($1, $2, $3)', 
-          [context.signature, instruction, mintAddress]);
         client.release();
-        console.log(`Saved transaction: ${context.signature}, Instruction: ${instruction}, Mint: ${mintAddress}`);
       } catch (err) {
-        console.error('Ошибка при обработке транзакции:', err);
+        console.error('Error processing transaction:', err);
       }
-    },
-    'confirmed'
-  );
+    }
+  } catch (err) {
+    console.error('Error fetching signatures:', err);
+  }
 }
+
+// Запускаем проверку новых транзакций каждые 30 секунд
+setInterval(getNewTransactions, 30000);
 
 app.get('/api/transactions', async (req, res) => {
   try {
@@ -106,5 +113,5 @@ app.get('/', (req, res) => {
 app.listen(port, async () => {
   console.log(`Сервер запущен на порту ${port}`);
   await initDatabase();
-  monitorWallet().catch(console.error);
+  getNewTransactions().catch(console.error);
 });
