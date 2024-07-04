@@ -29,17 +29,8 @@ async function initDatabase() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    // Проверяем наличие колонки instruction и добавляем её, если она отсутствует
-    const result = await client.query(`
-      SELECT column_name 
-      FROM information_schema.columns 
-      WHERE table_name='transactions' AND column_name='instruction'
-    `);
-    if (result.rows.length === 0) {
-      await client.query(`ALTER TABLE transactions ADD COLUMN instruction TEXT`);
-      console.log('Added instruction column to transactions table');
-    }
-    console.log('Transactions table created or updated successfully');
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions (created_at DESC)`);
+    console.log('Transactions table and index created or updated successfully');
   } catch (err) {
     console.error('Error initializing database:', err);
   } finally {
@@ -138,17 +129,18 @@ function setupWebSocket() {
 }
 
 app.get('/api/transactions', async (req, res) => {
+  const client = await pool.connect();
   try {
-    const client = await pool.connect();
     console.log('Attempting to fetch transactions...');
     const result = await client.query('SELECT * FROM transactions ORDER BY created_at DESC LIMIT 10');
     const transactions = result.rows;
-    client.release();
     console.log(`Fetched ${transactions.length} transactions`);
     res.json(transactions);
   } catch (err) {
     console.error('Error fetching transactions:', err);
     res.status(500).json({ error: "Error fetching transactions", details: err.message });
+  } finally {
+    client.release();
   }
 });
 
