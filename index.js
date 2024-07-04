@@ -15,11 +15,9 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// Функция для задержки выполнения
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Функция для повторных попыток с экспоненциальной задержкой
-async function retryWithBackoff(fn, maxRetries = 5, initialDelay = 1000) {
+async function retryWithBackoff(fn, maxRetries = 5, initialDelay = 5000) {
   let retries = 0;
   while (retries < maxRetries) {
     try {
@@ -68,7 +66,7 @@ async function getNewTransactions() {
   
   try {
     const signatures = await retryWithBackoff(() => 
-      connection.getSignaturesForAddress(publicKey, { limit: 10 })
+      connection.getSignaturesForAddress(publicKey, { limit: 5 })
     );
     
     for (const signatureInfo of signatures) {
@@ -110,16 +108,16 @@ async function getNewTransactions() {
         console.error('Error processing transaction:', err);
       }
       
-      // Добавляем задержку между обработкой транзакций
-      await delay(1000);
+      // Увеличиваем задержку между обработкой транзакций
+      await delay(5000);
     }
   } catch (err) {
     console.error('Error fetching signatures:', err);
   }
 }
 
-// Запускаем проверку новых транзакций каждые 60 секунд
-setInterval(getNewTransactions, 60000);
+// Увеличиваем интервал проверки новых транзакций до 5 минут
+setInterval(getNewTransactions, 300000);
 
 app.get('/api/transactions', async (req, res) => {
   try {
