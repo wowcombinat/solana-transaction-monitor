@@ -70,6 +70,8 @@ async function getNewTransactions() {
       connection.getSignaturesForAddress(publicKey, { limit: 5 })
     );
     
+    console.log(`Found ${signatures.length} signatures`);
+    
     for (const signatureInfo of signatures) {
       try {
         const client = await pool.connect();
@@ -110,6 +112,8 @@ async function getNewTransactions() {
           await client.query('INSERT INTO transactions(signature, instruction, mint_address) VALUES($1, $2, $3)', 
             [signatureInfo.signature, instruction, mintAddress]);
           console.log(`Saved transaction: ${signatureInfo.signature}, Instruction: ${instruction}, Mint: ${mintAddress}`);
+        } else {
+          console.log('Transaction already exists:', signatureInfo.signature);
         }
         
         client.release();
@@ -125,8 +129,12 @@ async function getNewTransactions() {
   }
 }
 
-// Увеличиваем интервал проверки новых транзакций до 5 минут
-setInterval(getNewTransactions, 300000);
+// Запускаем проверку новых транзакций сразу и затем каждые 5 минут
+getNewTransactions().catch(console.error);
+setInterval(() => {
+  console.log('Starting scheduled transaction check');
+  getNewTransactions().catch(console.error);
+}, 300000);
 
 app.get('/api/transactions', async (req, res) => {
   try {
@@ -150,5 +158,4 @@ app.get('/', (req, res) => {
 app.listen(port, async () => {
   console.log(`Сервер запущен на порту ${port}`);
   await initDatabase();
-  getNewTransactions().catch(console.error);
 });
