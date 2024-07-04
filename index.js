@@ -49,10 +49,12 @@ async function monitorWallet() {
       console.log('Новая транзакция:', context.signature);
       try {
         const txInfo = await connection.getTransaction(context.signature, { maxSupportedTransactionVersion: 0 });
-        let instruction = '';
-        let mintAddress = '';
+        console.log('Transaction info:', JSON.stringify(txInfo, null, 2));
         
-        if (txInfo && txInfo.transaction.message.instructions.length > 0) {
+        let instruction = 'Unknown';
+        let mintAddress = 'Not found';
+        
+        if (txInfo && txInfo.transaction && txInfo.transaction.message && txInfo.transaction.message.instructions.length > 0) {
           const ix = txInfo.transaction.message.instructions[0];
           if (ix.programId.toBase58() === 'PUMP1SoLNVs2WaPz7TnLbkoYoRiKbxWQspYdRPdJszDr') {
             instruction = 'Pump.Fun: Create';
@@ -65,14 +67,17 @@ async function monitorWallet() {
               }
             }
           }
+        } else {
+          console.log('Transaction info is incomplete or undefined');
         }
         
         const client = await pool.connect();
         await client.query('INSERT INTO transactions(signature, instruction, mint_address) VALUES($1, $2, $3)', 
           [context.signature, instruction, mintAddress]);
         client.release();
+        console.log(`Saved transaction: ${context.signature}, Instruction: ${instruction}, Mint: ${mintAddress}`);
       } catch (err) {
-        console.error('Ошибка при сохранении в базу данных:', err);
+        console.error('Ошибка при обработке транзакции:', err);
       }
     },
     'confirmed'
