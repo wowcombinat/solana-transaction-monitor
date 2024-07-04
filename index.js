@@ -58,16 +58,8 @@ async function processTransaction(signature) {
       const txInfo = await connection.getParsedTransaction(signature, { maxSupportedTransactionVersion: 0 });
       
       if (txInfo) {
-        const data = {
-          signature: signature,
-          blockTime: txInfo.blockTime,
-          slot: txInfo.slot,
-          meta: txInfo.meta,
-          transaction: txInfo.transaction
-        };
-
         await client.query('INSERT INTO transactions(signature, data) VALUES($1, $2)', 
-          [signature, JSON.stringify(data)]);
+          [signature, JSON.stringify(txInfo)]);
         console.log(`Saved transaction: ${signature}`);
       } else {
         console.log(`No transaction info found for signature: ${signature}`);
