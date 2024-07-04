@@ -1,5 +1,5 @@
 const express = require('express');
-const { Connection, PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
+const { Connection, PublicKey } = require('@solana/web3.js');
 const { Pool } = require('pg');
 require('dotenv').config();
 
@@ -7,7 +7,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL;
-const WALLET_ADDRESS = process.env.WALLET_ADDRESS;
+const WALLET_ADDRESS = 'TSLvdd1pWpHVjahSpsvCXUbgwsL3JAcvokwaKt1eokM';
 
 const connection = new Connection(SOLANA_RPC_URL, 'confirmed');
 const pool = new Pool({
@@ -23,7 +23,8 @@ async function initDatabase() {
       CREATE TABLE IF NOT EXISTS transactions (
         id SERIAL PRIMARY KEY,
         signature TEXT,
-        logs JSON,
+        instruction TEXT,
+        mint_address TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -47,8 +48,28 @@ async function monitorWallet() {
     async (logs, context) => {
       console.log('Новая транзакция:', context.signature);
       try {
+        const txInfo = await connection.getTransaction(context.signature, { maxSupportedTransactionVersion: 0 });
+        let instruction = '';
+        let mintAddress = '';
+        
+        if (txInfo && txInfo.transaction.message.instructions.length > 0) {
+          const ix = txInfo.transaction.message.instructions[0];
+          if (ix.programId.toBase58() === 'PUMP1SoLNVs2WaPz7TnLbkoYoRiKbxWQspYdRPdJszDr') {
+            instruction = 'Pump.Fun: Create';
+            // Поиск mint адреса в инструкциях
+            for (let i = 1; i < txInfo.transaction.message.instructions.length; i++) {
+              const subIx = txInfo.transaction.message.instructions[i];
+              if (subIx.programId.toBase58() === 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA') {
+                mintAddress = subIx.accounts[0].toBase58();
+                break;
+              }
+            }
+          }
+        }
+        
         const client = await pool.connect();
-        await client.query('INSERT INTO transactions(signature, logs) VALUES($1, $2)', [context.signature || 'unknown', JSON.stringify(logs)]);
+        await client.query('INSERT INTO transactions(signature, instruction, mint_address) VALUES($1, $2, $3)', 
+          [context.signature, instruction, mintAddress]);
         client.release();
       } catch (err) {
         console.error('Ошибка при сохранении в базу данных:', err);
@@ -70,17 +91,6 @@ app.get('/api/transactions', async (req, res) => {
   } catch (err) {
     console.error('Error fetching transactions:', err);
     res.status(500).json({ error: "Error fetching transactions", details: err.message });
-  }
-});
-
-app.get('/api/balance', async (req, res) => {
-  try {
-    const publicKey = new PublicKey(WALLET_ADDRESS);
-    const balance = await connection.getBalance(publicKey);
-    res.json({ balance: balance / LAMPORTS_PER_SOL });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Error fetching balance" });
   }
 });
 
