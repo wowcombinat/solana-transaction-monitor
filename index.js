@@ -172,6 +172,19 @@ async function processTransaction(signature, wss) {
               VALUES ($1, 0, 0, 0, 0, '[]')
               ON CONFLICT (mint) DO NOTHING
             `, [mint]);
+
+            // Process and save transaction details for the mint
+            const transactionDetails = txInfo.transaction.message.instructions.map(inst => ({
+              programId: inst.programId.toBase58(),
+              data: inst.data,
+              accounts: inst.keys.map(key => key.pubkey.toBase58())
+            }));
+
+            await client.query(`
+              INSERT INTO mint_transactions (mint, signature, details)
+              VALUES ($1, $2, $3)
+              ON CONFLICT (signature) DO NOTHING
+            `, [mint, signature, JSON.stringify(transactionDetails)]);
           }
         }
 
@@ -295,12 +308,43 @@ app.get('/api/tokens', async (req, res) => {
   }
 });
 
+app.get('/api/token-transactions/:mint', async (req, res) => {
+  const { mint } = req.params;
+  const { page = 1, limit = 10 } = req.query;
+  const offset = (page - 1) * limit;
+
+  const client = await pool.connect();
+  try {
+    console.log(`Fetching transactions for mint ${mint} on page ${page} with limit ${limit}`);
+    const result = await client.query(`
+      SELECT signature, details
+      FROM mint_transactions
+      WHERE mint = $1
+      ORDER BY created_at DESC
+      LIMIT $2 OFFSET $3
+    `, [mint, limit, offset]);
+
+    const transactions = result.rows;
+    console.log(`Fetched ${transactions.length} transactions for mint ${mint}`);
+    res.json(transactions);
+  } catch (err) {
+    console.error('Error fetching transactions for mint:', err);
+    res.status(500).json({ error: "Error fetching transactions for mint", details: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 app.get('/', (req, res) => {
   res.sendFile(__dirname + '/public/index.html');
 });
 
 app.get('/history', (req, res) => {
   res.sendFile(__dirname + '/public/history.html');
+});
+
+app.get('/token/:mint', (req, res) => {
+  res.sendFile(__dirname + '/public/token.html');
 });
 
 const server = app.listen(port, async () => {
