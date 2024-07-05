@@ -125,11 +125,13 @@ async function processTransaction(signature) {
         // Extracting mint information
         const mintInstructions = txInfo.transaction.message.instructions
           .map(inst => {
-            const programId = inst.programId.toBase58();
-            if (programId === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") { // Token Program ID
-              const decoded = connection.decodeInstruction(inst);
-              if (decoded.data.instruction === 0) { // MintTo instruction
-                return decoded;
+            if (inst.programId && inst.programId.toBase58) {
+              const programId = inst.programId.toBase58();
+              if (programId === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") { // Token Program ID
+                const decoded = connection.decodeInstruction(inst);
+                if (decoded.data.instruction === 0) { // MintTo instruction
+                  return decoded;
+                }
               }
             }
             return null;
@@ -216,11 +218,13 @@ app.get('/api/transactions', async (req, res) => {
         ...row.tx_data,
         mintInstructions: row.tx_data.txInfo.transaction.message.instructions
           .map(inst => {
-            const programId = inst.programId.toBase58();
-            if (programId === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") {
-              const decoded = connection.decodeInstruction(inst);
-              if (decoded.data.instruction === 0) {
-                return decoded;
+            if (inst.programId && inst.programId.toBase58) {
+              const programId = inst.programId.toBase58();
+              if (programId === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") {
+                const decoded = connection.decodeInstruction(inst);
+                if (decoded.data.instruction === 0) {
+                  return decoded;
+                }
               }
             }
             return null;
