@@ -103,6 +103,44 @@ async function initDatabase() {
   }
 }
 
+async function initTokenHistoryTable() {
+  console.log('Initializing token history table...');
+  const client = await pool.connect();
+  try {
+    console.log('Attempting to create or update token history table...');
+    
+    const tableExists = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'token_history'
+      );
+    `);
+
+    if (!tableExists.rows[0].exists) {
+      console.log('Creating token history table...');
+      await client.query(`
+        CREATE TABLE token_history (
+          id SERIAL PRIMARY KEY,
+          mint TEXT UNIQUE,
+          holders NUMERIC,
+          sales INTEGER,
+          purchases INTEGER,
+          price NUMERIC,
+          relationships JSON,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+    }
+
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_token_history_created_at ON token_history (created_at DESC)`);
+    console.log('Token history table and index created successfully');
+  } catch (err) {
+    console.error('Error initializing token history table:', err);
+  } finally {
+    client.release();
+  }
+}
+
 app.use(express.static('public'));
 app.use(express.json());
 
@@ -122,6 +160,21 @@ async function processTransaction(signature, wss) {
         await client.query('INSERT INTO transactions(signature, tx_data) VALUES($1, $2)', 
           [signature, JSON.stringify(txInfo)]);
         console.log(`Saved transaction: ${signature}`);
+
+        // Extract and save mint data to token history
+        const postTokenBalances = txInfo.meta?.postTokenBalances || [];
+        const mintInfo = [...new Set(postTokenBalances.map(balance => balance.mint))];
+
+        if (mintInfo.length > 0) {
+          for (const mint of mintInfo) {
+            await client.query(`
+              INSERT INTO token_history (mint, holders, sales, purchases, price, relationships)
+              VALUES ($1, 0, 0, 0, 0, '[]')
+              ON CONFLICT (mint) DO NOTHING
+            `, [mint]);
+          }
+        }
+
         wss.clients.forEach(client => {
           if (client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify({
@@ -223,7 +276,7 @@ app.get('/api/tokens', async (req, res) => {
 
   const client = await pool.connect();
   try {
-    console.log('Attempting to fetch token history...');
+    console.log(`Fetching token history for page ${page} with limit ${limit}`);
     const result = await client.query(`
       SELECT mint, holders, sales, purchases, price, relationships
       FROM token_history
@@ -254,6 +307,7 @@ const server = app.listen(port, async () => {
   console.log(`Server starting on port ${port}`);
   try {
     await initDatabase();
+    await initTokenHistoryTable();
     console.log('Database initialized, starting WebSocket connection...');
     const wss = new WebSocket.Server({ server });
     setupWebSocket(wss);
@@ -281,3 +335,4 @@ process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
   process.exit(1);
 });
+
