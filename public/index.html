@@ -2,11 +2,6 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solana Transaction Monitor</title>
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
@@ -19,6 +14,12 @@
         }
         .card {
             margin-bottom: 20px;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            overflow: auto;
         }
     </style>
 </head>
@@ -46,27 +47,24 @@
                 txId.className = 'card-title';
                 txId.textContent = `Transaction ID: ${tx.signature}`;
 
-                const mintDetails = document.createElement('div');
-                mintDetails.className = 'card-text';
-                
-                if (tx.tx_data.mintInstructions && tx.tx_data.mintInstructions.length > 0) {
-                    tx.tx_data.mintInstructions.forEach(mint => {
-                        const mintInfo = document.createElement('p');
-                        mintInfo.innerHTML = `<strong>Mint:</strong> ${mint.parsed.info.mint}<br>
-                                              <strong>Owner:</strong> ${mint.parsed.info.owner}<br>
-                                              <strong>Amount:</strong> ${mint.parsed.info.amount}`;
-                        mintDetails.appendChild(mintInfo);
-                    });
-                } else {
-                    mintDetails.textContent = 'No mint instructions found.';
-                }
+                const txDetails = document.createElement('div');
+                txDetails.className = 'card-text';
+
+                const rawDetails = document.createElement('pre');
+                rawDetails.textContent = JSON.stringify(tx.tx_data, null, 2);
+                txDetails.appendChild(rawDetails);
 
                 cardBody.appendChild(txId);
-                cardBody.appendChild(mintDetails);
+                cardBody.appendChild(txDetails);
                 card.appendChild(cardBody);
                 transactionsDiv.appendChild(card);
             });
         }
+
+        document.addEventListener('DOMContentLoaded', fetchTransactions);
+    </script>
+</body>
+</html>
 
         document.addEventListener('DOMContentLoaded', fetchTransactions);
     </script>
