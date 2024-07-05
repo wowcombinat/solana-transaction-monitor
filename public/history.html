@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Token History</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
+    <style>
+        body {
+            background-color: #000;
+            color: #0f0;
+            font-family: 'Courier New', Courier, monospace;
+            padding-top: 20px;
+            overflow: hidden;
+        }
+        .container {
+            max-width: 800px;
+        }
+        .card {
+            background-color: #111;
+            border: 1px solid #0f0;
+            margin-bottom: 20px;
+        }
+        .card-title {
+            color: #0f0;
+        }
+        table {
+            width: 100%;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 10px;
+            border: 1px solid #0f0;
+        }
+        th {
+            background-color: #222;
+        }
+        td {
+            background-color: #111;
+        }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .page-item {
+            margin: 0 5px;
+        }
+        .page-link {
+            color: #0f0;
+            background-color: #111;
+            border: 1px solid #0f0;
+            cursor: pointer;
+        }
+        #home-button {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background-color: #0f0;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: transform 0.5s;
+        }
+        #home-button:hover {
+            transform: scale(1.1);
+        }
+        #home-button:active {
+            transform: scale(0.9);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-center">Token History</h1>
+        <div id="token-history" class="mt-4"></div>
+        <div class="pagination">
+            <button class="page-link" id="prev-page">Previous</button>
+            <button class="page-link" id="next-page">Next</button>
+        </div>
+        <button id="home-button">HOME</button>
+    </div>
+
+    <script>
+        let currentPage = 1;
+
+        async function fetchTokenHistory(page) {
+            const response = await fetch(`/api/tokens?page=${page}`);
+            const tokens = await response.json();
+            const tokenHistoryDiv = document.getElementById('token-history');
+            tokenHistoryDiv.innerHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Mint Address</th>
+                            <th>Holders (%)</th>
+                            <th>Sales</th>
+                            <th>Purchases</th>
+                            <th>Price</th>
+                            <th>Relationships</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tokens.map(token => `
+                            <tr>
+                                <td>${token.mint}</td>
+                                <td>${token.holders}</td>
+                                <td>${token.sales}</td>
+                                <td>${token.purchases}</td>
+                                <td>${token.price}</td>
+                                <td>${token.relationships}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        document.getElementById('prev-page').addEventListener('click', () => {
+            if (currentPage > 1) {
+                currentPage--;
+                fetchTokenHistory(currentPage);
+            }
+        });
+
+        document.getElementById('next-page').addEventListener('click', () => {
+            currentPage++;
+            fetchTokenHistory(currentPage);
+        });
+
+        document.getElementById('home-button').addEventListener('click', () => {
+            window.location.href = '/';
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchTokenHistory(currentPage);
+        });
+    </script>
+</body>
+</html>
