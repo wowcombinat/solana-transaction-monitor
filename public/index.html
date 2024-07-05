@@ -11,7 +11,7 @@
             color: #0f0;
             font-family: 'Courier New', Courier, monospace;
             padding-top: 20px;
-            overflow: hidden;
+            overflow-x: hidden;
         }
         .container {
             max-width: 800px;
@@ -58,6 +58,14 @@
         #history-button:active {
             transform: scale(0.9);
         }
+        .mint-link {
+            color: #0f0;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+        .mint-link:hover {
+            color: #ff0;
+        }
     </style>
 </head>
 <body>
@@ -91,7 +99,7 @@
             if (mintInfo.length > 0) {
                 mintInfo.forEach(mint => {
                     const mintElement = document.createElement('p');
-                    mintElement.innerHTML = `<strong>Mint:</strong> ${mint}<br><strong>Created At:</strong> ${new Date(tx.tx_data.blockTime * 1000).toLocaleString()}`;
+                    mintElement.innerHTML = `<strong>Mint:</strong> <span class="mint-link" onclick="window.location.href='/token.html?mint=${mint}'">${mint}</span><br><strong>Created At:</strong> ${new Date(tx.tx_data.blockTime * 1000).toLocaleString()}`;
                     mintDetails.appendChild(mintElement);
                 });
             } else {
