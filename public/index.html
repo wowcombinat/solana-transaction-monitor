@@ -23,6 +23,15 @@
         .card-title {
             color: #0f0;
         }
+        .newest {
+            border-color: red;
+        }
+        .second-newest {
+            border-color: yellow;
+        }
+        .older {
+            border-color: green;
+        }
         pre {
             background-color: #111;
             color: #0f0;
@@ -40,6 +49,7 @@
 
     <script>
         const transactionsDiv = document.getElementById('transactions');
+        let transactionCount = 0;
 
         function addTransaction(tx) {
             const card = document.createElement('div');
@@ -71,13 +81,39 @@
             cardBody.appendChild(txId);
             cardBody.appendChild(mintDetails);
             card.appendChild(cardBody);
+
+            if (transactionCount === 0) {
+                card.classList.add('newest');
+            } else if (transactionCount === 1) {
+                card.classList.add('second-newest');
+            } else {
+                card.classList.add('older');
+            }
+
             transactionsDiv.insertBefore(card, transactionsDiv.firstChild);
+            updateCardColors();
+            transactionCount++;
+        }
+
+        function updateCardColors() {
+            const cards = transactionsDiv.querySelectorAll('.card');
+            cards.forEach((card, index) => {
+                card.classList.remove('newest', 'second-newest', 'older');
+                if (index === 0) {
+                    card.classList.add('newest');
+                } else if (index === 1) {
+                    card.classList.add('second-newest');
+                } else {
+                    card.classList.add('older');
+                }
+            });
         }
 
         async function fetchTransactions() {
             const response = await fetch('/api/transactions');
             const transactions = await response.json();
             transactionsDiv.innerHTML = '';
+            transactionCount = 0;
 
             transactions.forEach(addTransaction);
         }
@@ -85,7 +121,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             fetchTransactions();
 
-            const ws = new WebSocket('wss://YOUR_SOLANA_RPC_URL_HERE'); // Замените на ваш фактический URL WebSocket
+            const ws = new WebSocket('wss://YOUR_WEBSOCKET_SERVER_URL'); // Замените на ваш фактический URL WebSocket
 
             ws.onmessage = (event) => {
                 const tx = JSON.parse(event.data);
