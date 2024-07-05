@@ -74,7 +74,7 @@
       data.tokens.forEach(token => {
         const row = document.createElement('tr');
         row.innerHTML = `
-          <td><a href="/token?mint=${token.mint}">${token.mint}</a></td>
+          <td><a href="/token.html?mint=${token.mint}">${token.mint}</a></td>
           <td>${token.holders}</td>
           <td>${token.sales}</td>
           <td>${token.purchases}</td>
@@ -108,3 +108,4 @@
   </script>
 </body>
 </html>
+
