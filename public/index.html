@@ -82,15 +82,8 @@
             cardBody.appendChild(mintDetails);
             card.appendChild(cardBody);
 
-            if (transactionCount === 0) {
-                card.classList.add('newest');
-            } else if (transactionCount === 1) {
-                card.classList.add('second-newest');
-            } else {
-                card.classList.add('older');
-            }
-
             transactionsDiv.insertBefore(card, transactionsDiv.firstChild);
+
             updateCardColors();
             transactionCount++;
         }
@@ -115,7 +108,7 @@
             transactionsDiv.innerHTML = '';
             transactionCount = 0;
 
-            transactions.forEach(addTransaction);
+            transactions.reverse().forEach(addTransaction);
         }
 
         document.addEventListener('DOMContentLoaded', () => {
