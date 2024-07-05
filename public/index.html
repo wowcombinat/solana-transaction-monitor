@@ -50,13 +50,14 @@
                 const mintDetails = document.createElement('div');
                 mintDetails.className = 'card-text';
 
-                const postTokenBalances = tx.tx_data.meta.postTokenBalances || [];
-                if (postTokenBalances.length > 0) {
-                    postTokenBalances.forEach(balance => {
-                        const mintInfo = document.createElement('p');
-                        mintInfo.innerHTML = `<strong>Mint:</strong> ${balance.mint}<br>
-                                              <strong>Account Index:</strong> ${balance.accountIndex}`;
-                        mintDetails.appendChild(mintInfo);
+                const postTokenBalances = tx.tx_data.meta?.postTokenBalances || [];
+                const mintInfo = postTokenBalances.map(balance => balance.mint);
+
+                if (mintInfo.length > 0) {
+                    mintInfo.forEach(mint => {
+                        const mintElement = document.createElement('p');
+                        mintElement.innerHTML = `<strong>Mint:</strong> ${mint}`;
+                        mintDetails.appendChild(mintElement);
                     });
                 } else {
                     mintDetails.textContent = 'No mint instructions found.';
