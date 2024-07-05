@@ -119,22 +119,8 @@ async function processTransaction(signature) {
       const txInfo = await retryWithBackoff(() => connection.getParsedTransaction(signature, { maxSupportedTransactionVersion: 0 }));
       
       if (txInfo) {
-        const mintInstructions = txInfo.transaction.message.instructions
-          .map(inst => {
-            if (inst.programId && inst.programId.toBase58) {
-              const programId = inst.programId.toBase58();
-              if (programId === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") {
-                const decoded = decodeTokenInstruction(inst);
-                if (decoded && decoded.parsed.type === "mintTo") {
-                  return decoded;
-                }
-              }
-            }
-            return null;
-          }).filter(inst => inst !== null);
-
         await client.query('INSERT INTO transactions(signature, tx_data) VALUES($1, $2)', 
-          [signature, JSON.stringify({ txInfo, mintInstructions })]);
+          [signature, JSON.stringify(txInfo)]);
         console.log(`Saved transaction: ${signature}`);
       } else {
         console.log(`No transaction info found for signature: ${signature}`);
@@ -146,29 +132,6 @@ async function processTransaction(signature) {
     console.error('Error processing transaction:', err);
   } finally {
     client.release();
-  }
-}
-
-function decodeTokenInstruction(instruction) {
-  try {
-    const data = Buffer.from(instruction.data, 'base64');
-    const type = data[0];
-    const keys = instruction.keys.map(key => key.pubkey.toBase58());
-    return {
-      parsed: {
-        type: type === 0 ? "initializeMint" : type === 1 ? "initializeAccount" : "mintTo",
-        info: {
-          mint: keys[0],
-          owner: keys[1],
-          amount: data.readUInt32LE(1),
-        },
-      },
-      keys,
-      programId: instruction.programId.toBase58(),
-    };
-  } catch (error) {
-    console.error('Failed to decode instruction:', error);
-    return null;
   }
 }
 
@@ -233,10 +196,7 @@ app.get('/api/transactions', async (req, res) => {
     const result = await client.query('SELECT * FROM transactions ORDER BY created_at DESC LIMIT 10');
     const transactions = result.rows.map(row => ({
       ...row,
-      tx_data: {
-        ...row.tx_data,
-        mintInstructions: row.tx_data.mintInstructions
-      }
+      tx_data: row.tx_data
     }));
     console.log(`Fetched ${transactions.length} transactions`);
     res.json(transactions);
