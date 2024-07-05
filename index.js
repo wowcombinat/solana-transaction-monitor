@@ -123,7 +123,7 @@ async function processTransaction(signature) {
         for (const inst of mintInstructions) {
           if (inst.parsed?.type === 'mintTo' && inst.parsed.info.mint) {
             const mint = inst.parsed.info.mint;
-            const symbol = inst.parsed.info.symbol; // example of how to capture the symbol, update accordingly
+            const symbol = inst.parsed.info.symbol;
             const timestamp = txInfo.blockTime ? new Date(txInfo.blockTime * 1000).toISOString() : new Date().toISOString();
             await client.query(
               'INSERT INTO mint_transactions(mint, signature, details) VALUES($1, $2, $3) ON CONFLICT (signature) DO NOTHING', 
@@ -227,9 +227,11 @@ app.get('/api/tokens', async (req, res) => {
   const { page = 1, limit = 10 } = req.query;
   const offset = (page - 1) * limit;
 
+  console.log(`Fetching token history for page ${page} with limit ${limit}`);
+
   const client = await pool.connect();
   try {
-    console.log(`Fetching token history for page ${page} with limit ${limit}`);
+    console.log('Executing query...');
     const result = await client.query(`
       SELECT mint, holders, sales, purchases, price, relationships, symbol, timestamp
       FROM token_history
@@ -237,15 +239,26 @@ app.get('/api/tokens', async (req, res) => {
       LIMIT $1 OFFSET $2
     `, [limit, offset]);
 
+    console.log(`Query result: ${result.rows.length} rows`);
+
     const totalResult = await client.query('SELECT COUNT(*) FROM token_history');
     const total = parseInt(totalResult.rows[0].count, 10);
 
+    console.log(`Total records: ${total}`);
+
     const tokens = result.rows;
-    console.log(`Fetched ${tokens.length} tokens`);
-    res.json({ tokens, total, totalPages: Math.ceil(total / limit), currentPage: parseInt(page, 10) });
+    const response = {
+      tokens,
+      total,
+      totalPages: Math.ceil(total / limit),
+      currentPage: parseInt(page, 10)
+    };
+
+    console.log('Sending response:', JSON.stringify(response));
+    res.json(response);
   } catch (err) {
     console.error('Error fetching token history:', err);
-    res.status(500).json({ error: "Error fetching token history", details: err.message });
+    res.status(500).json({ error: "Error fetching token history", details: err.message, stack: err.stack });
   } finally {
     client.release();
   }
@@ -267,7 +280,7 @@ app.get('/api/token-transactions/:mint', async (req, res) => {
       LIMIT $2 OFFSET $3
     `, [mint, limit, offset]);
 
-        const totalResult = await client.query('SELECT COUNT(*) FROM mint_transactions WHERE mint = $1', [mint]);
+    const totalResult = await client.query('SELECT COUNT(*) FROM mint_transactions WHERE mint = $1', [mint]);
     const total = parseInt(totalResult.rows[0].count, 10);
 
     const transactions = result.rows;
@@ -314,3 +327,5 @@ process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
   process.exit(1);
 });
+
+module.exports = app;
