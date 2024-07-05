@@ -84,11 +84,12 @@
 
         async function fetchTokenHistory(page) {
             try {
-                const response = await fetch(`/api/tokens?page=${page}`);
+                const response = await fetch(`/api/tokens?page=${page}&limit=10`);
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 const data = await response.json();
+                console.log('Received token data:', data); // Добавлено для отладки
                 
                 if (!data || !data.tokens) {
                     throw new Error('Invalid data received from server');
@@ -162,14 +163,22 @@
             window.location.href = '/';
         });
 
+        function startPeriodicUpdate() {
+            setInterval(() => {
+                fetchTokenHistory(currentPage);
+            }, 30000); // Обновление каждые 30 секунд
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             fetchTokenHistory(currentPage);
+            startPeriodicUpdate();
         });
 
         // WebSocket connection for real-time updates
         const ws = new WebSocket(`ws://${window.location.host}`);
 
         ws.onmessage = (event) => {
+            console.log('Received WebSocket message:', event.data);
             const data = JSON.parse(event.data);
             if (data.type === 'update') {
                 fetchTokenHistory(currentPage);
