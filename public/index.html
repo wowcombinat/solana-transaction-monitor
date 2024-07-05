@@ -121,7 +121,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             fetchTransactions();
 
-            const ws = new WebSocket('wss://YOUR_WEBSOCKET_SERVER_URL'); // Замените на ваш фактический URL WebSocket
+            const ws = new WebSocket(`wss://${window.location.host}/ws`); // WebSocket URL
 
             ws.onmessage = (event) => {
                 const tx = JSON.parse(event.data);
