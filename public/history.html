@@ -89,41 +89,65 @@
         let totalPages = 1;
 
         async function fetchTokenHistory(page) {
-            const response = await fetch(`/api/tokens?page=${page}`);
-            const { tokens, total, totalPages, currentPage } = await response.json();
-            document.getElementById('page-info').textContent = `Page ${currentPage} of ${totalPages}`;
-            
-            const tokenHistoryDiv = document.getElementById('token-history');
-            tokenHistoryDiv.innerHTML = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Mint Address</th>
-                            <th>Holders (%)</th>
-                            <th>Sales</th>
-                            <th>Purchases</th>
-                            <th>Price</th>
-                            <th>Symbol</th>
-                            <th>Time</th>
-                            <th>Relationships</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${tokens.map(token => `
+            try {
+                const response = await fetch(`/api/tokens?page=${page}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                
+                if (!data || !data.tokens) {
+                    throw new Error('Invalid data received from server');
+                }
+
+                const { tokens, total, totalPages: pages, currentPage: current } = data;
+                totalPages = pages;
+                currentPage = current;
+
+                document.getElementById('page-info').textContent = `Page ${currentPage} of ${totalPages}`;
+                
+                const tokenHistoryDiv = document.getElementById('token-history');
+                tokenHistoryDiv.innerHTML = `
+                    <table>
+                        <thead>
                             <tr>
-                                <td><span class="mint-link" onclick="window.location.href='/token.html?mint=${token.mint}'">${token.mint}</span></td>
-                                <td>${token.holders}</td>
-                                <td>${token.sales}</td>
-                                <td>${token.purchases}</td>
-                                <td>${token.price}</td>
-                                <td>${token.symbol}</td>
-                                <td>${new Date(token.timestamp).toLocaleString()}</td>
-                                <td>${token.relationships}</td>
+                                <th>Mint Address</th>
+                                <th>Holders (%)</th>
+                                <th>Sales</th>
+                                <th>Purchases</th>
+                                <th>Price</th>
+                                <th>Symbol</th>
+                                <th>Time</th>
+                                <th>Relationships</th>
                             </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
+                        </thead>
+                        <tbody>
+                            ${tokens.map(token => `
+                                <tr>
+                                    <td><span class="mint-link" onclick="window.location.href='/token.html?mint=${token.mint}'">${token.mint}</span></td>
+                                    <td>${token.holders || 'N/A'}</td>
+                                    <td>${token.sales || 'N/A'}</td>
+                                    <td>${token.purchases || 'N/A'}</td>
+                                    <td>${token.price || 'N/A'}</td>
+                                    <td>${token.symbol || 'N/A'}</td>
+                                    <td>${token.timestamp ? new Date(token.timestamp).toLocaleString() : 'N/A'}</td>
+                                    <td>${token.relationships || 'N/A'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+
+                updatePaginationButtons();
+            } catch (error) {
+                console.error('Error fetching token history:', error);
+                document.getElementById('token-history').innerHTML = `<p>Error loading token history. Please try again later.</p>`;
+            }
+        }
+
+        function updatePaginationButtons() {
+            document.getElementById('prev-page').disabled = currentPage <= 1;
+            document.getElementById('next-page').disabled = currentPage >= totalPages;
         }
 
         document.getElementById('prev-page').addEventListener('click', () => {
