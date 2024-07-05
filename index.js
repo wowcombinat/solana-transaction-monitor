@@ -55,8 +55,6 @@ async function initDatabase() {
         id SERIAL PRIMARY KEY,
         signature TEXT UNIQUE,
         tx_data JSON,
-        instruction TEXT,
-        logs JSON,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -114,8 +112,8 @@ async function processTransaction(signature) {
       const txInfo = await retryWithBackoff(() => connection.getParsedTransaction(signature, { maxSupportedTransactionVersion: 0 }));
 
       if (txInfo) {
-        await client.query('INSERT INTO transactions(signature, tx_data, instruction, logs) VALUES($1, $2, $3, $4)', 
-          [signature, JSON.stringify(txInfo), JSON.stringify(txInfo.transaction.message.instructions), JSON.stringify(txInfo.meta.logMessages)]);
+        await client.query('INSERT INTO transactions(signature, tx_data) VALUES($1, $2)', 
+          [signature, JSON.stringify(txInfo)]);
         console.log(`Saved transaction: ${signature}`);
 
         const mintInstructions = txInfo.transaction.message.instructions.filter(
@@ -125,22 +123,26 @@ async function processTransaction(signature) {
         for (const inst of mintInstructions) {
           if (inst.parsed?.type === 'mintTo' && inst.parsed.info.mint) {
             const mint = inst.parsed.info.mint;
-            const symbol = inst.parsed.info.symbol;
+            const symbol = inst.parsed.info.symbol || 'Unknown';
             const timestamp = txInfo.blockTime ? new Date(txInfo.blockTime * 1000).toISOString() : new Date().toISOString();
-            await client.query(
-              'INSERT INTO mint_transactions(mint, signature, details) VALUES($1, $2, $3) ON CONFLICT (signature) DO NOTHING', 
-              [mint, signature, JSON.stringify(inst)]
-            );
+            
+            await client.query(`
+              INSERT INTO mint_transactions(mint, signature, details)
+              VALUES($1, $2, $3)
+              ON CONFLICT (signature) DO NOTHING
+            `, [mint, signature, JSON.stringify(inst)]);
+
             await client.query(`
               INSERT INTO token_history(mint, symbol, timestamp, holders, sales, purchases, price)
-              VALUES($1, $2, $3, 0, 0, 0, 0)
+              VALUES($1, $2, $3, 1, 0, 0, 0)
               ON CONFLICT (mint) 
               DO UPDATE SET 
                 symbol = EXCLUDED.symbol,
-                timestamp = EXCLUDED.timestamp
+                timestamp = EXCLUDED.timestamp,
+                holders = token_history.holders + 1
             `, [mint, symbol, timestamp]);
+            
             console.log(`Updated token history for mint: ${mint}`);
-            await updateTokenStats(mint);
           }
         }
       } else {
@@ -154,52 +156,6 @@ async function processTransaction(signature) {
   } finally {
     client.release();
   }
-}
-
-async function updateTokenStats(mint) {
-  const client = await pool.connect();
-  try {
-    // Здесь должна быть логика подсчета держателей, продаж и покупок
-    // Это пример, вам нужно адаптировать его под вашу конкретную логику
-    const holders = await getHoldersCount(mint);
-    const sales = await getSalesCount(mint);
-    const purchases = await getPurchasesCount(mint);
-    const price = await getLatestPrice(mint);
-
-    await client.query(`
-      UPDATE token_history
-      SET holders = $2, sales = $3, purchases = $4, price = $5
-      WHERE mint = $1
-    `, [mint, holders, sales, purchases, price]);
-
-    console.log(`Updated stats for mint: ${mint}`);
-    broadcastUpdate();
-  } catch (err) {
-    console.error('Error updating token stats:', err);
-  } finally {
-    client.release();
-  }
-}
-
-// Примеры функций для получения статистики (вам нужно реализовать их согласно вашей логике)
-async function getHoldersCount(mint) {
-  // Реализуйте логику подсчета держателей
-  return 0;
-}
-
-async function getSalesCount(mint) {
-  // Реализуйте логику подсчета продаж
-  return 0;
-}
-
-async function getPurchasesCount(mint) {
-  // Реализуйте логику подсчета покупок
-  return 0;
-}
-
-async function getLatestPrice(mint) {
-  // Реализуйте логику получения последней цены
-  return 0;
 }
 
 async function processQueue() {
