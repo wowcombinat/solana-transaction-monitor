@@ -55,6 +55,8 @@ async function initDatabase() {
         id SERIAL PRIMARY KEY,
         signature TEXT UNIQUE,
         tx_data JSON,
+        instruction TEXT,
+        logs JSON,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -112,8 +114,8 @@ async function processTransaction(signature) {
       const txInfo = await retryWithBackoff(() => connection.getParsedTransaction(signature, { maxSupportedTransactionVersion: 0 }));
 
       if (txInfo) {
-        await client.query('INSERT INTO transactions(signature, tx_data) VALUES($1, $2)', 
-          [signature, JSON.stringify(txInfo)]);
+        await client.query('INSERT INTO transactions(signature, tx_data, instruction, logs) VALUES($1, $2, $3, $4)', 
+          [signature, JSON.stringify(txInfo), JSON.stringify(txInfo.transaction.message.instructions), JSON.stringify(txInfo.meta.logMessages)]);
         console.log(`Saved transaction: ${signature}`);
 
         const mintInstructions = txInfo.transaction.message.instructions.filter(
@@ -129,11 +131,16 @@ async function processTransaction(signature) {
               'INSERT INTO mint_transactions(mint, signature, details) VALUES($1, $2, $3) ON CONFLICT (signature) DO NOTHING', 
               [mint, signature, JSON.stringify(inst)]
             );
-            await client.query(
-              'INSERT INTO token_history(mint, symbol, timestamp) VALUES($1, $2, $3) ON CONFLICT (mint) DO NOTHING', 
-              [mint, symbol, timestamp]
-            );
-            console.log(`Saved mint transaction: ${signature}`);
+            await client.query(`
+              INSERT INTO token_history(mint, symbol, timestamp, holders, sales, purchases, price)
+              VALUES($1, $2, $3, 0, 0, 0, 0)
+              ON CONFLICT (mint) 
+              DO UPDATE SET 
+                symbol = EXCLUDED.symbol,
+                timestamp = EXCLUDED.timestamp
+            `, [mint, symbol, timestamp]);
+            console.log(`Updated token history for mint: ${mint}`);
+            await updateTokenStats(mint);
           }
         }
       } else {
@@ -147,6 +154,52 @@ async function processTransaction(signature) {
   } finally {
     client.release();
   }
+}
+
+async function updateTokenStats(mint) {
+  const client = await pool.connect();
+  try {
+    // Здесь должна быть логика подсчета держателей, продаж и покупок
+    // Это пример, вам нужно адаптировать его под вашу конкретную логику
+    const holders = await getHoldersCount(mint);
+    const sales = await getSalesCount(mint);
+    const purchases = await getPurchasesCount(mint);
+    const price = await getLatestPrice(mint);
+
+    await client.query(`
+      UPDATE token_history
+      SET holders = $2, sales = $3, purchases = $4, price = $5
+      WHERE mint = $1
+    `, [mint, holders, sales, purchases, price]);
+
+    console.log(`Updated stats for mint: ${mint}`);
+    broadcastUpdate();
+  } catch (err) {
+    console.error('Error updating token stats:', err);
+  } finally {
+    client.release();
+  }
+}
+
+// Примеры функций для получения статистики (вам нужно реализовать их согласно вашей логике)
+async function getHoldersCount(mint) {
+  // Реализуйте логику подсчета держателей
+  return 0;
+}
+
+async function getSalesCount(mint) {
+  // Реализуйте логику подсчета продаж
+  return 0;
+}
+
+async function getPurchasesCount(mint) {
+  // Реализуйте логику подсчета покупок
+  return 0;
+}
+
+async function getLatestPrice(mint) {
+  // Реализуйте логику получения последней цены
+  return 0;
 }
 
 async function processQueue() {
@@ -318,6 +371,23 @@ const server = app.listen(port, async () => {
     process.exit(1);
   }
 });
+
+const wss = new WebSocket.Server({ server });
+
+wss.on('connection', (ws) => {
+  console.log('New WebSocket connection');
+  ws.on('message', (message) => {
+    console.log('Received message:', message);
+  });
+});
+
+function broadcastUpdate() {
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify({ type: 'update' }));
+    }
+  });
+}
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
