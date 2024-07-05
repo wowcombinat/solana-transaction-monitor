@@ -50,7 +50,6 @@ async function initDatabase() {
   try {
     console.log('Attempting to create or update transactions table...');
     
-    // Check for table existence
     const tableExists = await client.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -61,7 +60,6 @@ async function initDatabase() {
     if (tableExists.rows[0].exists) {
       console.log('Transactions table exists, checking columns...');
       
-      // Check for 'data' column existence
       const dataColumnExists = await client.query(`
         SELECT EXISTS (
           SELECT FROM information_schema.columns 
@@ -69,7 +67,6 @@ async function initDatabase() {
         );
       `);
 
-      // Check for 'tx_data' column existence
       const txDataColumnExists = await client.query(`
         SELECT EXISTS (
           SELECT FROM information_schema.columns 
@@ -122,14 +119,13 @@ async function processTransaction(signature) {
       const txInfo = await retryWithBackoff(() => connection.getParsedTransaction(signature, { maxSupportedTransactionVersion: 0 }));
       
       if (txInfo) {
-        // Extracting mint information
         const mintInstructions = txInfo.transaction.message.instructions
           .map(inst => {
             if (inst.programId && inst.programId.toBase58) {
               const programId = inst.programId.toBase58();
-              if (programId === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") { // Token Program ID
-                const decoded = connection.decodeInstruction(inst);
-                if (decoded.data.instruction === 0) { // MintTo instruction
+              if (programId === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") {
+                const decoded = decodeTokenInstruction(inst);
+                if (decoded && decoded.parsed.type === "mintTo") {
                   return decoded;
                 }
               }
@@ -153,6 +149,29 @@ async function processTransaction(signature) {
   }
 }
 
+function decodeTokenInstruction(instruction) {
+  try {
+    const data = Buffer.from(instruction.data, 'base64');
+    const type = data[0];
+    const keys = instruction.keys.map(key => key.pubkey.toBase58());
+    return {
+      parsed: {
+        type: type === 0 ? "initializeMint" : type === 1 ? "initializeAccount" : "mintTo",
+        info: {
+          mint: keys[0],
+          owner: keys[1],
+          amount: data.readUInt32LE(1),
+        },
+      },
+      keys,
+      programId: instruction.programId.toBase58(),
+    };
+  } catch (error) {
+    console.error('Failed to decode instruction:', error);
+    return null;
+  }
+}
+
 async function processQueue() {
   if (isProcessing || transactionQueue.length === 0) return;
   
@@ -160,7 +179,7 @@ async function processQueue() {
   while (transactionQueue.length > 0) {
     const signature = transactionQueue.shift();
     await processTransaction(signature);
-    await delay(5000); // Wait 5 seconds between processing transactions
+    await delay(5000);
   }
   isProcessing = false;
 }
@@ -216,19 +235,7 @@ app.get('/api/transactions', async (req, res) => {
       ...row,
       tx_data: {
         ...row.tx_data,
-        mintInstructions: row.tx_data.txInfo.transaction.message.instructions
-          .map(inst => {
-            if (inst.programId && inst.programId.toBase58) {
-              const programId = inst.programId.toBase58();
-              if (programId === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") {
-                const decoded = connection.decodeInstruction(inst);
-                if (decoded.data.instruction === 0) {
-                  return decoded;
-                }
-              }
-            }
-            return null;
-          }).filter(inst => inst !== null)
+        mintInstructions: row.tx_data.mintInstructions
       }
     }));
     console.log(`Fetched ${transactions.length} transactions`);
