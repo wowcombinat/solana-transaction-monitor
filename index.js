@@ -122,8 +122,21 @@ async function processTransaction(signature) {
       const txInfo = await retryWithBackoff(() => connection.getParsedTransaction(signature, { maxSupportedTransactionVersion: 0 }));
       
       if (txInfo) {
+        // Extracting mint information
+        const mintInstructions = txInfo.transaction.message.instructions
+          .map(inst => {
+            const programId = inst.programId.toBase58();
+            if (programId === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") { // Token Program ID
+              const decoded = connection.decodeInstruction(inst);
+              if (decoded.data.instruction === 0) { // MintTo instruction
+                return decoded;
+              }
+            }
+            return null;
+          }).filter(inst => inst !== null);
+
         await client.query('INSERT INTO transactions(signature, tx_data) VALUES($1, $2)', 
-          [signature, JSON.stringify(txInfo)]);
+          [signature, JSON.stringify({ txInfo, mintInstructions })]);
         console.log(`Saved transaction: ${signature}`);
       } else {
         console.log(`No transaction info found for signature: ${signature}`);
@@ -199,7 +212,20 @@ app.get('/api/transactions', async (req, res) => {
     const result = await client.query('SELECT * FROM transactions ORDER BY created_at DESC LIMIT 10');
     const transactions = result.rows.map(row => ({
       ...row,
-      tx_data: row.tx_data
+      tx_data: {
+        ...row.tx_data,
+        mintInstructions: row.tx_data.txInfo.transaction.message.instructions
+          .map(inst => {
+            const programId = inst.programId.toBase58();
+            if (programId === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") {
+              const decoded = connection.decodeInstruction(inst);
+              if (decoded.data.instruction === 0) {
+                return decoded;
+              }
+            }
+            return null;
+          }).filter(inst => inst !== null)
+      }
     }));
     console.log(`Fetched ${transactions.length} transactions`);
     res.json(transactions);
