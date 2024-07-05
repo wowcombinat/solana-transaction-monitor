@@ -1,200 +1,110 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Token History</title>
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
-    <style>
-        body {
-            background-color: #000;
-            color: #0f0;
-            font-family: 'Courier New', Courier, monospace;
-            padding-top: 20px;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        table {
-            width: 100%;
-            margin-top: 20px;
-            border-collapse: separate;
-            border-spacing: 0;
-        }
-        th, td {
-            padding: 10px;
-            border: 1px solid #0f0;
-            text-align: center;
-        }
-        th {
-            background-color: #111;
-        }
-        td {
-            background-color: #000;
-        }
-        .pagination {
-            display: flex;
-            justify-content: center;
-            margin-top: 20px;
-        }
-        .page-link {
-            color: #0f0;
-            background-color: #111;
-            border: 1px solid #0f0;
-            cursor: pointer;
-            margin: 0 5px;
-        }
-        #home-button {
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            background-color: #0f0;
-            color: #000;
-            border: none;
-            padding: 10px 20px;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        .mint-link {
-            color: #0f0;
-            text-decoration: underline;
-            cursor: pointer;
-        }
-        .mint-link:hover {
-            color: #ff0;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Token History</title>
+  <style>
+    body {
+      background-color: black;
+      color: green;
+      font-family: 'Courier New', Courier, monospace;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      border: 1px solid green;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background-color: #004400;
+    }
+    #navigation {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 20px;
+    }
+    .button {
+      background-color: green;
+      color: black;
+      padding: 10px 20px;
+      text-decoration: none;
+      font-weight: bold;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h1 class="text-center mb-4">Token History</h1>
-        <div id="token-history"></div>
-        <div class="pagination">
-            <button class="page-link" id="prev-page">Previous</button>
-            <span id="page-info" class="mx-3"></span>
-            <button class="page-link" id="next-page">Next</button>
-        </div>
-        <button id="home-button">HOME</button>
-    </div>
+  <h1>Token History</h1>
+  <a href="/" class="button">HOME</a>
+  <table>
+    <thead>
+      <tr>
+        <th>Mint Address</th>
+        <th>Holders (%)</th>
+        <th>Sales</th>
+        <th>Purchases</th>
+        <th>Price</th>
+        <th>Symbol</th>
+        <th>Time</th>
+        <th>Relationships</th>
+      </tr>
+    </thead>
+    <tbody id="token-history">
+      <!-- Rows will be added here dynamically -->
+    </tbody>
+  </table>
+  <div id="navigation">
+    <a href="#" id="previous" class="button">Previous</a>
+    <span id="page-info"></span>
+    <a href="#" id="next" class="button">Next</a>
+  </div>
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    let currentPage = parseInt(urlParams.get('page') || '1');
 
-    <script>
-        let currentPage = 1;
-        let totalPages = 1;
+    async function fetchTokenHistory(page) {
+      const response = await fetch(`/api/tokens?page=${page}&limit=10`);
+      const data = await response.json();
+      const tbody = document.getElementById('token-history');
+      tbody.innerHTML = '';
 
-        async function fetchTokenHistory(page) {
-            try {
-                const response = await fetch(`/api/tokens?page=${page}&limit=10`);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const data = await response.json();
-                console.log('Received token data:', data); // Добавлено для отладки
-                
-                if (!data || !data.tokens) {
-                    throw new Error('Invalid data received from server');
-                }
+      data.tokens.forEach(token => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td><a href="/token?mint=${token.mint}">${token.mint}</a></td>
+          <td>${token.holders}</td>
+          <td>${token.sales}</td>
+          <td>${token.purchases}</td>
+          <td>${token.price}</td>
+          <td>${token.symbol}</td>
+          <td>${new Date(token.timestamp).toLocaleString()}</td>
+          <td>${JSON.stringify(token.relationships)}</td>
+        `;
+        tbody.appendChild(row);
+      });
 
-                const { tokens, total, totalPages: pages, currentPage: current } = data;
-                totalPages = pages;
-                currentPage = current;
+      document.getElementById('page-info').innerText = `Page ${data.currentPage} of ${data.totalPages}`;
 
-                document.getElementById('page-info').textContent = `Page ${currentPage} of ${totalPages}`;
-                
-                const tokenHistoryDiv = document.getElementById('token-history');
-                tokenHistoryDiv.innerHTML = `
-                    <table class="table table-dark table-striped">
-                        <thead>
-                            <tr>
-                                <th>Mint Address</th>
-                                <th>Holders (%)</th>
-                                <th>Sales</th>
-                                <th>Purchases</th>
-                                <th>Price</th>
-                                <th>Symbol</th>
-                                <th>Time</th>
-                                <th>Relationships</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${tokens.map(token => `
-                                <tr>
-                                    <td><span class="mint-link" onclick="window.location.href='/token.html?mint=${token.mint}'">${token.mint}</span></td>
-                                    <td>${token.holders || 'N/A'}</td>
-                                    <td>${token.sales || 'N/A'}</td>
-                                    <td>${token.purchases || 'N/A'}</td>
-                                    <td>${token.price || 'N/A'}</td>
-                                    <td>${token.symbol || 'N/A'}</td>
-                                    <td>${token.timestamp ? new Date(token.timestamp).toLocaleString() : 'N/A'}</td>
-                                    <td>${JSON.stringify(token.relationships) || 'N/A'}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                `;
+      document.getElementById('previous').style.display = data.currentPage > 1 ? 'inline-block' : 'none';
+      document.getElementById('next').style.display = data.currentPage < data.totalPages ? 'inline-block' : 'none';
+    }
 
-                updatePaginationButtons();
-            } catch (error) {
-                console.error('Error fetching token history:', error);
-                document.getElementById('token-history').innerHTML = `<p>Error loading token history. Please try again later. Details: ${error.message}</p>`;
-            }
-        }
+    document.getElementById('previous').addEventListener('click', () => {
+      if (currentPage > 1) {
+        currentPage--;
+        fetchTokenHistory(currentPage);
+      }
+    });
 
-        function updatePaginationButtons() {
-            document.getElementById('prev-page').disabled = currentPage <= 1;
-            document.getElementById('next-page').disabled = currentPage >= totalPages;
-        }
+    document.getElementById('next').addEventListener('click', () => {
+      currentPage++;
+      fetchTokenHistory(currentPage);
+    });
 
-        document.getElementById('prev-page').addEventListener('click', () => {
-            if (currentPage > 1) {
-                currentPage--;
-                fetchTokenHistory(currentPage);
-            }
-        });
-
-        document.getElementById('next-page').addEventListener('click', () => {
-            if (currentPage < totalPages) {
-                currentPage++;
-                fetchTokenHistory(currentPage);
-            }
-        });
-
-        document.getElementById('home-button').addEventListener('click', () => {
-            window.location.href = '/';
-        });
-
-        function startPeriodicUpdate() {
-            setInterval(() => {
-                fetchTokenHistory(currentPage);
-            }, 30000); // Обновление каждые 30 секунд
-        }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            fetchTokenHistory(currentPage);
-            startPeriodicUpdate();
-        });
-
-        // WebSocket connection for real-time updates
-        const ws = new WebSocket(`ws://${window.location.host}`);
-
-        ws.onmessage = (event) => {
-            console.log('Received WebSocket message:', event.data);
-            const data = JSON.parse(event.data);
-            if (data.type === 'update') {
-                fetchTokenHistory(currentPage);
-            }
-        };
-
-        ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
-        };
-
-        ws.onclose = () => {
-            console.log('WebSocket connection closed. Reconnecting...');
-            setTimeout(() => {
-                window.location.reload();
-            }, 5000);
-        };
-    </script>
+    fetchTokenHistory(currentPage);
+  </script>
 </body>
 </html>
