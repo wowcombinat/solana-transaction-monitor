@@ -70,6 +70,14 @@
         #home-button:active {
             transform: scale(0.9);
         }
+        .mint-link {
+            color: #0f0;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+        .mint-link:hover {
+            color: #ff0;
+        }
     </style>
 </head>
 <body>
@@ -131,7 +139,7 @@
                                     <td>${token.price || 'N/A'}</td>
                                     <td>${token.symbol || 'N/A'}</td>
                                     <td>${token.timestamp ? new Date(token.timestamp).toLocaleString() : 'N/A'}</td>
-                                    <td>${token.relationships || 'N/A'}</td>
+                                    <td>${JSON.stringify(token.relationships) || 'N/A'}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -141,7 +149,7 @@
                 updatePaginationButtons();
             } catch (error) {
                 console.error('Error fetching token history:', error);
-                document.getElementById('token-history').innerHTML = `<p>Error loading token history. Please try again later.</p>`;
+                document.getElementById('token-history').innerHTML = `<p>Error loading token history. Please try again later. Details: ${error.message}</p>`;
             }
         }
 
@@ -171,6 +179,27 @@
         document.addEventListener('DOMContentLoaded', () => {
             fetchTokenHistory(currentPage);
         });
+
+        // WebSocket connection for real-time updates
+        const ws = new WebSocket(`wss://${window.location.host}`);
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === 'update') {
+                fetchTokenHistory(currentPage);
+            }
+        };
+
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+        };
+
+        ws.onclose = () => {
+            console.log('WebSocket connection closed. Reconnecting...');
+            setTimeout(() => {
+                window.location.reload();
+            }, 5000);
+        };
     </script>
 </body>
 </html>
