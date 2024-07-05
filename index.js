@@ -219,26 +219,43 @@ function setupWebSocket() {
   });
 }
 
-app.get('/api/transactions', async (req, res) => {
-  console.time('fetchTransactions');
+app.get('/api/tokens', async (req, res) => {
+  const { page = 1, limit = 10 } = req.query;
+  const offset = (page - 1) * limit;
+
+  console.log(`Fetching token history for page ${page} with limit ${limit}`);
+
   const client = await pool.connect();
   try {
-    console.log('Attempting to fetch transactions...');
-    const result = await client.query('SELECT * FROM transactions ORDER BY created_at DESC LIMIT 10');
-    const transactions = result.rows.map(row => ({
-      ...row,
-      tx_data: row.tx_data
-    }));
-    console.log(`Fetched ${transactions.length} transactions`);
-    res.json(transactions);
+    const result = await client.query(`
+      SELECT mint, holders, sales, purchases, price, relationships, symbol, timestamp
+      FROM token_history
+      WHERE timestamp IS NOT NULL
+      ORDER BY timestamp DESC
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
+
+    const totalResult = await client.query('SELECT COUNT(*) FROM token_history WHERE timestamp IS NOT NULL');
+    const total = parseInt(totalResult.rows[0].count, 10);
+
+    const tokens = result.rows;
+    const response = {
+      tokens,
+      total,
+      totalPages: Math.ceil(total / limit),
+      currentPage: parseInt(page, 10)
+    };
+
+    console.log('Sending response:', JSON.stringify(response));
+    res.json(response);
   } catch (err) {
-    console.error('Error fetching transactions:', err);
-    res.status(500).json({ error: "Error fetching transactions", details: err.message });
+    console.error('Error fetching token history:', err);
+    res.status(500).json({ error: "Error fetching token history", details: err.message, stack: err.stack });
   } finally {
     client.release();
-    console.timeEnd('fetchTransactions');
   }
 });
+
 
 app.get('/api/tokens', async (req, res) => {
   const { page = 1, limit = 10 } = req.query;
