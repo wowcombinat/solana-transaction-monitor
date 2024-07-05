@@ -76,7 +76,7 @@ async function initDatabase() {
       );
     `);
 
-        await client.query(`
+    await client.query(`
       CREATE TABLE IF NOT EXISTS mint_transactions (
         id SERIAL PRIMARY KEY,
         mint TEXT,
@@ -265,7 +265,7 @@ app.get('/api/tokens', async (req, res) => {
     console.log(`Total records: ${total}`);
 
     const tokens = result.rows;
-    const response = {
+        const response = {
       tokens,
       total,
       totalPages: Math.ceil(total / limit),
