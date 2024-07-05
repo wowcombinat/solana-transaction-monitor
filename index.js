@@ -4,19 +4,13 @@ const { Pool } = require('pg');
 const WebSocket = require('ws');
 require('dotenv').config();
 
-console.log('Starting application...');
-
 const app = express();
 const port = process.env.PORT || 3000;
 
-console.log('Configuring environment variables...');
 const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const WALLET_ADDRESS = 'TSLvdd1pWpHVjahSpsvCXUbgwsL3JAcvokwaKt1eokM';
-
-console.log('Initializing Solana connection...');
 const connection = new Connection(SOLANA_RPC_URL, 'confirmed');
 
-console.log('Initializing database pool...');
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
@@ -45,37 +39,29 @@ async function retryWithBackoff(fn, maxRetries = 5, initialDelay = 10000) {
 }
 
 async function initDatabase() {
-  console.log('Initializing database...');
   const client = await pool.connect();
   try {
-    console.log('Attempting to create or update transactions and token_history tables...');
-
     await client.query(`
       CREATE TABLE IF NOT EXISTS transactions (
         id SERIAL PRIMARY KEY,
         signature TEXT UNIQUE,
         tx_data JSON,
-        instruction TEXT,
-        logs JSON,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
+      )
     `);
-
     await client.query(`
       CREATE TABLE IF NOT EXISTS token_history (
         id SERIAL PRIMARY KEY,
-        mint TEXT UNIQUE,
+        mint TEXT,
         holders NUMERIC,
-        sales INTEGER,
-        purchases INTEGER,
+        sales INT,
+        purchases INT,
         price NUMERIC,
         relationships JSON,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         symbol TEXT,
-        timestamp TIMESTAMP
-      );
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
     `);
-
     await client.query(`
       CREATE TABLE IF NOT EXISTS mint_transactions (
         id SERIAL PRIMARY KEY,
@@ -83,14 +69,9 @@ async function initDatabase() {
         signature TEXT UNIQUE,
         details JSON,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
+      )
     `);
-
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions (created_at DESC)`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_token_history_created_at ON token_history (created_at DESC)`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_mint_transactions_created_at ON mint_transactions (created_at DESC)`);
-
-    console.log('Tables and indexes created or updated successfully');
+    console.log('Tables created or already exist');
   } catch (err) {
     console.error('Error initializing database:', err);
   } finally {
@@ -105,58 +86,14 @@ const transactionQueue = [];
 let isProcessing = false;
 
 async function processTransaction(signature) {
-  console.log('Processing transaction:', signature);
   const client = await pool.connect();
   try {
     const existingTx = await client.query('SELECT * FROM transactions WHERE signature = $1', [signature]);
-
     if (existingTx.rows.length === 0) {
       const txInfo = await retryWithBackoff(() => connection.getParsedTransaction(signature, { maxSupportedTransactionVersion: 0 }));
-
       if (txInfo) {
-        await client.query('INSERT INTO transactions(signature, tx_data, instruction, logs) VALUES($1, $2, $3, $4)', 
-          [signature, JSON.stringify(txInfo), JSON.stringify(txInfo.transaction.message.instructions), JSON.stringify(txInfo.meta.logMessages)]);
-        console.log(`Saved transaction: ${signature}`);
-
-        const mintInstructions = txInfo.transaction.message.instructions.filter(
-          inst => inst.programId.toBase58() === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        );
-
-        for (const inst of mintInstructions) {
-          if (inst.parsed?.type === 'mintTo' && inst.parsed.info.mint) {
-            const mint = inst.parsed.info.mint;
-            const symbol = inst.parsed.info.symbol || 'Unknown';
-            const timestamp = txInfo.blockTime ? new Date(txInfo.blockTime * 1000) : new Date();
-            
-            await client.query(`
-              INSERT INTO mint_transactions(mint, signature, details)
-              VALUES($1, $2, $3)
-              ON CONFLICT (signature) DO NOTHING
-            `, [mint, signature, JSON.stringify(inst)]);
-
-            console.log(`Attempting to insert/update token: ${mint}`);
-            await client.query(`
-              INSERT INTO token_history(mint, symbol, timestamp, holders, sales, purchases, price, relationships)
-              VALUES($1, $2, $3, 1, 0, 0, 0, '{}')
-              ON CONFLICT (mint) 
-              DO UPDATE SET 
-                symbol = COALESCE(EXCLUDED.symbol, token_history.symbol),
-                timestamp = GREATEST(EXCLUDED.timestamp, token_history.timestamp),
-                holders = COALESCE(token_history.holders, 0) + 1
-            `, [mint, symbol, timestamp]);
-            
-            const checkResult = await client.query('SELECT * FROM token_history WHERE mint = $1', [mint]);
-            console.log(`Check result for ${mint}:`, checkResult.rows);
-            
-            console.log(`Updated token history for mint: ${mint}`);
-            broadcastUpdate();
-          }
-        }
-      } else {
-        console.log(`No transaction info found for signature: ${signature}`);
+        await client.query('INSERT INTO transactions(signature, tx_data) VALUES($1, $2)', [signature, JSON.stringify(txInfo)]);
       }
-    } else {
-      console.log('Transaction already exists:', signature);
     }
   } catch (err) {
     console.error('Error processing transaction:', err);
@@ -167,63 +104,54 @@ async function processTransaction(signature) {
 
 async function processQueue() {
   if (isProcessing || transactionQueue.length === 0) return;
-
   isProcessing = true;
   while (transactionQueue.length > 0) {
     const signature = transactionQueue.shift();
     await processTransaction(signature);
-    await delay(5000); // Wait 5 seconds between processing transactions
+    await delay(5000);
   }
   isProcessing = false;
 }
 
 function setupWebSocket() {
-  console.log('Setting up WebSocket...');
   const ws = new WebSocket(SOLANA_RPC_URL.replace('https', 'wss'));
-
   ws.on('open', () => {
-    console.log('WebSocket connection opened');
     const subscribeMessage = {
       jsonrpc: '2.0',
       id: 1,
       method: 'logsSubscribe',
-      params: [
-        {
-          mentions: [ WALLET_ADDRESS ]
-        },
-        {
-          commitment: 'confirmed'
-        }
-      ]
+      params: [{ mentions: [WALLET_ADDRESS] }, { commitment: 'confirmed' }]
     };
     ws.send(JSON.stringify(subscribeMessage));
   });
-
   ws.on('message', (data) => {
     const message = JSON.parse(data);
     if (message.method === 'logsNotification') {
       const signature = message.params.result.value.signature;
-      console.log('Received new transaction:', signature);
       transactionQueue.push(signature);
       processQueue();
     }
   });
-
-  ws.on('error', (error) => {
-    console.error('WebSocket error:', error);
-  });
-
-  ws.on('close', () => {
-    console.log('WebSocket connection closed. Reconnecting...');
-    setTimeout(setupWebSocket, 5000);
-  });
+  ws.on('error', (error) => console.error('WebSocket error:', error));
+  ws.on('close', () => setTimeout(setupWebSocket, 5000));
 }
+
+app.get('/api/transactions', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const result = await client.query('SELECT * FROM transactions ORDER BY created_at DESC LIMIT 10');
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching transactions:', err);
+    res.status(500).json({ error: "Error fetching transactions", details: err.message });
+  } finally {
+    client.release();
+  }
+});
 
 app.get('/api/tokens', async (req, res) => {
   const { page = 1, limit = 10 } = req.query;
   const offset = (page - 1) * limit;
-
-  console.log(`Fetching token history for page ${page} with limit ${limit}`);
 
   const client = await pool.connect();
   try {
@@ -246,57 +174,13 @@ app.get('/api/tokens', async (req, res) => {
       currentPage: parseInt(page, 10)
     };
 
-    console.log('Sending response:', JSON.stringify(response));
     res.json(response);
   } catch (err) {
     console.error('Error fetching token history:', err);
-    res.status(500).json({ error: "Error fetching token history", details: err.message, stack: err.stack });
+    res.status(500).json({ error: "Error fetching token history", details: err.message });
   } finally {
     client.release();
   }
-});
-
-
-app.get('/api/tokens', async (req, res) => {
-  const { page = 1, limit = 10 } = req.query;
-  const offset = (page - 1) * limit;
-
-  console.log(`Fetching token history for page ${page} with limit ${limit}`);
-
-  const client = await pool.connect();
-  try {
-    console.log('Executing query...');
-    const result = await client.query(`
-      SELECT mint, holders, sales, purchases, price, relationships, symbol, timestamp
-      FROM token_history
-      WHERE timestamp IS NOT NULL
-      ORDER BY timestamp DESC
-      LIMIT $1 OFFSET $2
-    `, [limit, offset]);
-
-    console.log(`Query result: ${result.rows.length} rows`);
-
-    const totalResult = await client.query('SELECT COUNT(*) FROM token_history WHERE timestamp IS NOT NULL');
-    const total = parseInt(totalResult.rows[0].count, 10);
-
-    console.log(`Total records: ${total}`);
-
-    const tokens = result.rows;
-        const response = {
-      tokens,
-      total,
-          totalPages: Math.ceil(total / limit),
-    currentPage: parseInt(page, 10)
-  };
-
-  console.log('Sending response:', JSON.stringify(response));
-  res.json(response);
-} catch (err) {
-  console.error('Error fetching token history:', err);
-  res.status(500).json({ error: "Error fetching token history", details: err.message, stack: err.stack });
-} finally {
-  client.release();
-}
 });
 
 app.get('/api/token-transactions/:mint', async (req, res) => {
@@ -306,7 +190,6 @@ app.get('/api/token-transactions/:mint', async (req, res) => {
 
   const client = await pool.connect();
   try {
-    console.log(`Fetching transactions for mint ${mint} on page ${page} with limit ${limit}`);
     const result = await client.query(`
       SELECT signature, details
       FROM mint_transactions
@@ -319,7 +202,6 @@ app.get('/api/token-transactions/:mint', async (req, res) => {
     const total = parseInt(totalResult.rows[0].count, 10);
 
     const transactions = result.rows;
-    console.log(`Fetched ${transactions.length} transactions for mint ${mint}`);
     res.json({ transactions, total, totalPages: Math.ceil(total / limit), currentPage: parseInt(page, 10) });
   } catch (err) {
     console.error('Error fetching transactions for mint:', err);
@@ -342,12 +224,10 @@ app.get('/token', (req, res) => {
 });
 
 const server = app.listen(port, async () => {
-  console.log(`Server starting on port ${port}`);
   try {
     await initDatabase();
-    console.log('Database initialized, starting WebSocket connection...');
     setupWebSocket();
-    console.log(`Server is running on port ${port}`);
+    console.log(`Server running on port ${port}`);
   } catch (error) {
     console.error('Error during server startup:', error);
     process.exit(1);
