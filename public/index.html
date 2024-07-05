@@ -47,24 +47,27 @@
                 txId.className = 'card-title';
                 txId.textContent = `Transaction ID: ${tx.signature}`;
 
-                const txDetails = document.createElement('div');
-                txDetails.className = 'card-text';
+                const mintDetails = document.createElement('div');
+                mintDetails.className = 'card-text';
 
-                const rawDetails = document.createElement('pre');
-                rawDetails.textContent = JSON.stringify(tx.tx_data, null, 2);
-                txDetails.appendChild(rawDetails);
+                const postTokenBalances = tx.tx_data.meta.postTokenBalances || [];
+                if (postTokenBalances.length > 0) {
+                    postTokenBalances.forEach(balance => {
+                        const mintInfo = document.createElement('p');
+                        mintInfo.innerHTML = `<strong>Mint:</strong> ${balance.mint}<br>
+                                              <strong>Account Index:</strong> ${balance.accountIndex}`;
+                        mintDetails.appendChild(mintInfo);
+                    });
+                } else {
+                    mintDetails.textContent = 'No mint instructions found.';
+                }
 
                 cardBody.appendChild(txId);
-                cardBody.appendChild(txDetails);
+                cardBody.appendChild(mintDetails);
                 card.appendChild(cardBody);
                 transactionsDiv.appendChild(card);
             });
         }
-
-        document.addEventListener('DOMContentLoaded', fetchTransactions);
-    </script>
-</body>
-</html>
 
         document.addEventListener('DOMContentLoaded', fetchTransactions);
     </script>
