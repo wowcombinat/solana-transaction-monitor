@@ -217,8 +217,37 @@ app.get('/api/transactions', async (req, res) => {
   }
 });
 
+app.get('/api/tokens', async (req, res) => {
+  const { page = 1, limit = 10 } = req.query;
+  const offset = (page - 1) * limit;
+
+  const client = await pool.connect();
+  try {
+    console.log('Attempting to fetch token history...');
+    const result = await client.query(`
+      SELECT mint, holders, sales, purchases, price, relationships
+      FROM token_history
+      ORDER BY created_at DESC
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
+
+    const tokens = result.rows;
+    console.log(`Fetched ${tokens.length} tokens`);
+    res.json(tokens);
+  } catch (err) {
+    console.error('Error fetching token history:', err);
+    res.status(500).json({ error: "Error fetching token history", details: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 app.get('/', (req, res) => {
   res.sendFile(__dirname + '/public/index.html');
+});
+
+app.get('/history', (req, res) => {
+  res.sendFile(__dirname + '/public/history.html');
 });
 
 const server = app.listen(port, async () => {
