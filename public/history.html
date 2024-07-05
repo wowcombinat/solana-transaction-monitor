@@ -11,7 +11,7 @@
             color: #0f0;
             font-family: 'Courier New', Courier, monospace;
             padding-top: 20px;
-            overflow: hidden;
+            overflow-x: hidden;
         }
         .container {
             max-width: 800px;
@@ -106,7 +106,7 @@
                     <tbody>
                         ${tokens.map(token => `
                             <tr>
-                                <td>${token.mint}</td>
+                                <td><span class="mint-link" onclick="window.location.href='/token.html?mint=${token.mint}'">${token.mint}</span></td>
                                 <td>${token.holders}</td>
                                 <td>${token.sales}</td>
                                 <td>${token.purchases}</td>
@@ -114,9 +114,17 @@
                                 <td>${token.relationships}</td>
                             </tr>
                         `).join('')}
-                    </tbody>
+                                        </tbody>
                 </table>
             `;
+
+            // Добавляем нумерацию страниц
+            const totalPages = Math.ceil(tokens.length / 10); // Предположим, что у нас есть 10 записей на странице
+            let paginationHTML = '';
+            for (let i = 1; i <= totalPages; i++) {
+                paginationHTML += `<button class="page-link page-number">${i}</button>`;
+            }
+            document.querySelector('.pagination').innerHTML = paginationHTML;
         }
 
         document.getElementById('prev-page').addEventListener('click', () => {
@@ -129,6 +137,13 @@
         document.getElementById('next-page').addEventListener('click', () => {
             currentPage++;
             fetchTokenHistory(currentPage);
+        });
+
+        document.querySelector('.pagination').addEventListener('click', (e) => {
+            if (e.target.classList.contains('page-number')) {
+                currentPage = parseInt(e.target.textContent, 10);
+                fetchTokenHistory(currentPage);
+            }
         });
 
         document.getElementById('home-button').addEventListener('click', () => {
