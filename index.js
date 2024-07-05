@@ -76,7 +76,7 @@ async function initDatabase() {
       );
     `);
 
-    await client.query(`
+        await client.query(`
       CREATE TABLE IF NOT EXISTS mint_transactions (
         id SERIAL PRIMARY KEY,
         mint TEXT,
