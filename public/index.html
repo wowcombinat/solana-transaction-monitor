@@ -4,93 +4,66 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solana Transaction Monitor</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
+    <style>
+        body {
+            padding-top: 20px;
+        }
+        .container {
+            max-width: 800px;
+        }
+        .card {
+            margin-bottom: 20px;
+        }
+    </style>
 </head>
-<body class="bg-gray-100">
-    <div class="container mx-auto px-4 py-8">
-        <h1 class="text-4xl font-bold mb-8 text-center text-blue-600">Solana Transaction Monitor</h1>
-        
-        <div class="bg-white shadow-md rounded p-6">
-            <h2 class="text-2xl font-semibold mb-4">Recent Transactions</h2>
-            <ul id="transactions" class="space-y-4"></ul>
-        </div>
+<body>
+    <div class="container">
+        <h1 class="text-center">Solana Transaction Monitor</h1>
+        <div id="transactions" class="mt-4"></div>
     </div>
 
     <script>
-        async function fetchTransactionsWithRetry(retries = 3) {
-            for (let i = 0; i < retries; i++) {
-                try {
-                    const response = await fetch('/api/transactions');
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                    return await response.json();
-                } catch (error) {
-                    console.error(`Attempt ${i + 1} failed:`, error);
-                    if (i === retries - 1) throw error;
-                    await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+        async function fetchTransactions() {
+            const response = await fetch('/api/transactions');
+            const transactions = await response.json();
+            const transactionsDiv = document.getElementById('transactions');
+            transactionsDiv.innerHTML = '';
+
+            transactions.forEach(tx => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                
+                const cardBody = document.createElement('div');
+                cardBody.className = 'card-body';
+                
+                const txId = document.createElement('h5');
+                txId.className = 'card-title';
+                txId.textContent = `Transaction ID: ${tx.signature}`;
+
+                const mintDetails = document.createElement('div');
+                mintDetails.className = 'card-text';
+                
+                if (tx.tx_data.mintInstructions.length > 0) {
+                    tx.tx_data.mintInstructions.forEach(mint => {
+                        const mintInfo = document.createElement('p');
+                        mintInfo.innerHTML = `<strong>Mint:</strong> ${mint.parsed.info.mint}<br>
+                                              <strong>Owner:</strong> ${mint.parsed.info.owner}<br>
+                                              <strong>Amount:</strong> ${mint.parsed.info.amount}`;
+                        mintDetails.appendChild(mintInfo);
+                    });
+                } else {
+                    mintDetails.textContent = 'No mint instructions found.';
                 }
-            }
+
+                cardBody.appendChild(txId);
+                cardBody.appendChild(mintDetails);
+                card.appendChild(cardBody);
+                transactionsDiv.appendChild(card);
+            });
         }
 
-        function formatTransaction(tx) {
-            if (!tx.data) {
-                return `<p>No data available for transaction: ${tx.signature}</p>`;
-            }
-
-            let html = `
-                <h3 class="font-bold text-lg mb-2">Transaction Details:</h3>
-                <p><strong>Signature:</strong> ${tx.signature}</p>
-                <p><strong>Block Time:</strong> ${new Date(tx.data.blockTime * 1000).toLocaleString()}</p>
-                <p><strong>Slot:</strong> ${tx.data.slot}</p>
-                <h4 class="font-semibold mt-2">Instructions:</h4>
-            `;
-
-            if (tx.data.transaction && tx.data.transaction.message && tx.data.transaction.message.instructions) {
-                tx.data.transaction.message.instructions.forEach((instruction, index) => {
-                    html += `
-                        <div class="ml-4 mt-2">
-                            <p><strong>Instruction ${index + 1}:</strong></p>
-                            <p><strong>Program ID:</strong> ${instruction.programId}</p>
-                            <p><strong>Accounts:</strong> ${instruction.accounts.join(', ')}</p>
-                            <p><strong>Data:</strong> ${instruction.data}</p>
-                        </div>
-                    `;
-                });
-            }
-
-            if (tx.data.meta && tx.data.meta.logMessages) {
-                html += `
-                    <h4 class="font-semibold mt-2">Log Messages:</h4>
-                    <ul class="list-disc ml-6">
-                        ${tx.data.meta.logMessages.map(log => `<li>${log}</li>`).join('')}
-                    </ul>
-                `;
-            }
-
-            return html;
-        }
-
-        async function updateTransactions() {
-            try {
-                const transactions = await fetchTransactionsWithRetry();
-                const transactionsList = document.getElementById('transactions');
-                transactionsList.innerHTML = '';
-                transactions.forEach(tx => {
-                    const li = document.createElement('li');
-                    li.className = 'bg-gray-50 p-4 rounded mb-4';
-                    li.innerHTML = formatTransaction(tx);
-                    transactionsList.appendChild(li);
-                });
-            } catch (error) {
-                console.error('Error fetching transactions:', error);
-                const transactionsList = document.getElementById('transactions');
-                transactionsList.innerHTML = `<li class="text-red-500">Error loading transactions. Please try again later.</li>`;
-            }
-        }
-
-        updateTransactions();
-        setInterval(updateTransactions, 10000);
+        document.addEventListener('DOMContentLoaded', fetchTransactions);
     </script>
 </body>
 </html>
