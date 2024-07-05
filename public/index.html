@@ -99,7 +99,7 @@
             if (mintInfo.length > 0) {
                 mintInfo.forEach(mint => {
                     const mintElement = document.createElement('p');
-                    mintElement.innerHTML = `<strong>Mint:</strong> <span class="mint-link" onclick="window.location.href='/token.html?mint=${mint}'">${mint}</span><br><strong>Created At:</strong> ${new Date(tx.tx_data.blockTime * 1000).toLocaleString()}`;
+                    mintElement.innerHTML = `<strong>Mint:</strong> <span class="mint-link" onclick="window.location.href='/token?mint=${mint}'">${mint}</span><br><strong>Created At:</strong> ${new Date(tx.tx_data.blockTime * 1000).toLocaleString()}`;
                     mintDetails.appendChild(mintElement);
                 });
             } else {
