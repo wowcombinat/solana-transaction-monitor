@@ -78,6 +78,7 @@
         <div id="token-history" class="mt-4"></div>
         <div class="pagination">
             <button class="page-link" id="prev-page">Previous</button>
+            <span id="page-info"></span>
             <button class="page-link" id="next-page">Next</button>
         </div>
         <button id="home-button">HOME</button>
@@ -85,11 +86,13 @@
 
     <script>
         let currentPage = 1;
+        let totalPages = 1;
 
         async function fetchTokenHistory(page) {
             const response = await fetch(`/api/tokens?page=${page}`);
-            const tokens = await response.json();
-            console.log(tokens); // Логируем полученные данные для проверки
+            const { tokens, total, totalPages, currentPage } = await response.json();
+            document.getElementById('page-info').textContent = `Page ${currentPage} of ${totalPages}`;
+            
             const tokenHistoryDiv = document.getElementById('token-history');
             tokenHistoryDiv.innerHTML = `
                 <table>
@@ -100,6 +103,8 @@
                             <th>Sales</th>
                             <th>Purchases</th>
                             <th>Price</th>
+                            <th>Symbol</th>
+                            <th>Time</th>
                             <th>Relationships</th>
                         </tr>
                     </thead>
@@ -111,20 +116,14 @@
                                 <td>${token.sales}</td>
                                 <td>${token.purchases}</td>
                                 <td>${token.price}</td>
+                                <td>${token.symbol}</td>
+                                <td>${new Date(token.timestamp).toLocaleString()}</td>
                                 <td>${token.relationships}</td>
                             </tr>
                         `).join('')}
-                                        </tbody>
+                    </tbody>
                 </table>
             `;
-
-            // Добавляем нумерацию страниц
-            const totalPages = Math.ceil(tokens.length / 10); // Предположим, что у нас есть 10 записей на странице
-            let paginationHTML = '';
-            for (let i = 1; i <= totalPages; i++) {
-                paginationHTML += `<button class="page-link page-number">${i}</button>`;
-            }
-            document.querySelector('.pagination').innerHTML = paginationHTML;
         }
 
         document.getElementById('prev-page').addEventListener('click', () => {
@@ -135,13 +134,8 @@
         });
 
         document.getElementById('next-page').addEventListener('click', () => {
-            currentPage++;
-            fetchTokenHistory(currentPage);
-        });
-
-        document.querySelector('.pagination').addEventListener('click', (e) => {
-            if (e.target.classList.contains('page-number')) {
-                currentPage = parseInt(e.target.textContent, 10);
+            if (currentPage < totalPages) {
+                currentPage++;
                 fetchTokenHistory(currentPage);
             }
         });
