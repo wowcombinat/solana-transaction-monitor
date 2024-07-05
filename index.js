@@ -109,7 +109,7 @@ app.use(express.json());
 const transactionQueue = [];
 let isProcessing = false;
 
-async function processTransaction(signature) {
+async function processTransaction(signature, ws) {
   console.log('Processing transaction:', signature);
   const client = await pool.connect();
   try {
@@ -122,6 +122,12 @@ async function processTransaction(signature) {
         await client.query('INSERT INTO transactions(signature, tx_data) VALUES($1, $2)', 
           [signature, JSON.stringify(txInfo)]);
         console.log(`Saved transaction: ${signature}`);
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            signature,
+            tx_data: txInfo
+          }));
+        }
       } else {
         console.log(`No transaction info found for signature: ${signature}`);
       }
@@ -135,13 +141,13 @@ async function processTransaction(signature) {
   }
 }
 
-async function processQueue() {
+async function processQueue(ws) {
   if (isProcessing || transactionQueue.length === 0) return;
   
   isProcessing = true;
   while (transactionQueue.length > 0) {
     const signature = transactionQueue.shift();
-    await processTransaction(signature);
+    await processTransaction(signature, ws);
     await delay(5000);
   }
   isProcessing = false;
@@ -174,7 +180,7 @@ function setupWebSocket() {
     if (message.method === 'logsNotification') {
       const signature = message.params.result.value.signature;
       transactionQueue.push(signature);
-      processQueue();
+      processQueue(ws);
     }
   });
 
@@ -213,7 +219,7 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/public/index.html');
 });
 
-app.listen(port, async () => {
+const server = app.listen(port, async () => {
   console.log(`Server starting on port ${port}`);
   try {
     await initDatabase();
@@ -224,6 +230,20 @@ app.listen(port, async () => {
     console.error('Error during server startup:', error);
     process.exit(1);
   }
+});
+
+const wss = new WebSocket.Server({ server });
+
+wss.on('connection', (ws) => {
+  console.log('Client connected');
+  
+  ws.on('message', (message) => {
+    console.log('Received message:', message);
+  });
+
+  ws.on('close', () => {
+    console.log('Client disconnected');
+  });
 });
 
 process.on('unhandledRejection', (reason, promise) => {
