@@ -132,6 +132,7 @@ async function processTransaction(signature) {
               ON CONFLICT (signature) DO NOTHING
             `, [mint, signature, JSON.stringify(inst)]);
 
+            console.log(`Attempting to insert/update token: ${mint}`);
             await client.query(`
               INSERT INTO token_history(mint, symbol, timestamp, holders, sales, purchases, price)
               VALUES($1, $2, $3, 1, 0, 0, 0)
@@ -142,7 +143,11 @@ async function processTransaction(signature) {
                 holders = token_history.holders + 1
             `, [mint, symbol, timestamp]);
             
+            const checkResult = await client.query('SELECT * FROM token_history WHERE mint = $1', [mint]);
+            console.log(`Check result for ${mint}:`, checkResult.rows);
+            
             console.log(`Updated token history for mint: ${mint}`);
+            broadcastUpdate();
           }
         }
       } else {
@@ -196,6 +201,7 @@ function setupWebSocket() {
     const message = JSON.parse(data);
     if (message.method === 'logsNotification') {
       const signature = message.params.result.value.signature;
+      console.log('Received new transaction:', signature);
       transactionQueue.push(signature);
       processQueue();
     }
@@ -244,7 +250,7 @@ app.get('/api/tokens', async (req, res) => {
     const result = await client.query(`
       SELECT mint, holders, sales, purchases, price, relationships, symbol, timestamp
       FROM token_history
-      ORDER BY created_at DESC
+      ORDER BY timestamp DESC
       LIMIT $1 OFFSET $2
     `, [limit, offset]);
 
