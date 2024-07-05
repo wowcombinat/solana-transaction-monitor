@@ -89,6 +89,7 @@
         async function fetchTokenHistory(page) {
             const response = await fetch(`/api/tokens?page=${page}`);
             const tokens = await response.json();
+            console.log(tokens); // Логируем полученные данные для проверки
             const tokenHistoryDiv = document.getElementById('token-history');
             tokenHistoryDiv.innerHTML = `
                 <table>
