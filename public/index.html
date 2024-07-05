@@ -2,6 +2,11 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solana Transaction Monitor</title>
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
@@ -44,7 +49,7 @@
                 const mintDetails = document.createElement('div');
                 mintDetails.className = 'card-text';
                 
-                if (tx.tx_data.mintInstructions.length > 0) {
+                if (tx.tx_data.mintInstructions && tx.tx_data.mintInstructions.length > 0) {
                     tx.tx_data.mintInstructions.forEach(mint => {
                         const mintInfo = document.createElement('p');
                         mintInfo.innerHTML = `<strong>Mint:</strong> ${mint.parsed.info.mint}<br>
