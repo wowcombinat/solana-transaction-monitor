@@ -22,6 +22,28 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function retryWithBackoff(fn, maxRetries = 5, initialDelay = 10000) {
+  let retries = 0;
+  while (retries < maxRetries) {
+    try {
+      return await fn();
+    } catch (error) {
+      console.error(`Error occurred: ${error.message}`);
+      if (error.message.includes('429 Too Many Requests') || error.message.includes('503 Service Unavailable')) {
+        const waitTime = initialDelay * Math.pow(2, retries);
+        console.log(`Retrying after ${waitTime}ms delay...`);
+        await delay(waitTime);
+        retries++;
+      } else {
+        throw error;
+      }
+    }
+  }
+  throw new Error('Max retries reached');
+}
+
 async function initDatabase() {
   console.log('Initializing database...');
   const client = await pool.connect();
@@ -31,11 +53,23 @@ async function initDatabase() {
       CREATE TABLE IF NOT EXISTS transactions (
         id SERIAL PRIMARY KEY,
         signature TEXT UNIQUE,
-        data JSON,
+        tx_data JSON,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-
+    
+    // Проверяем наличие колонки data и переименовываем её в tx_data, если она существует
+    const checkDataColumn = await client.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name='transactions' AND column_name='data'
+    `);
+    
+    if (checkDataColumn.rows.length > 0) {
+      console.log('Renaming data column to tx_data...');
+      await client.query('ALTER TABLE transactions RENAME COLUMN data TO tx_data');
+    }
+    
     await client.query(`CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions (created_at DESC)`);
     console.log('Transactions table and index created or updated successfully');
   } catch (err) {
@@ -48,6 +82,9 @@ async function initDatabase() {
 app.use(express.static('public'));
 app.use(express.json());
 
+const transactionQueue = [];
+let isProcessing = false;
+
 async function processTransaction(signature) {
   console.log('Processing transaction:', signature);
   const client = await pool.connect();
@@ -55,10 +92,10 @@ async function processTransaction(signature) {
     const existingTx = await client.query('SELECT * FROM transactions WHERE signature = $1', [signature]);
     
     if (existingTx.rows.length === 0) {
-      const txInfo = await connection.getParsedTransaction(signature, { maxSupportedTransactionVersion: 0 });
+      const txInfo = await retryWithBackoff(() => connection.getParsedTransaction(signature, { maxSupportedTransactionVersion: 0 }));
       
       if (txInfo) {
-        await client.query('INSERT INTO transactions(signature, data) VALUES($1, $2)', 
+        await client.query('INSERT INTO transactions(signature, tx_data) VALUES($1, $2)', 
           [signature, JSON.stringify(txInfo)]);
         console.log(`Saved transaction: ${signature}`);
       } else {
@@ -72,6 +109,18 @@ async function processTransaction(signature) {
   } finally {
     client.release();
   }
+}
+
+async function processQueue() {
+  if (isProcessing || transactionQueue.length === 0) return;
+  
+  isProcessing = true;
+  while (transactionQueue.length > 0) {
+    const signature = transactionQueue.shift();
+    await processTransaction(signature);
+    await delay(5000); // Wait 5 seconds between processing transactions
+  }
+  isProcessing = false;
 }
 
 function setupWebSocket() {
@@ -100,7 +149,8 @@ function setupWebSocket() {
     const message = JSON.parse(data);
     if (message.method === 'logsNotification') {
       const signature = message.params.result.value.signature;
-      processTransaction(signature);
+      transactionQueue.push(signature);
+      processQueue();
     }
   });
 
@@ -122,7 +172,7 @@ app.get('/api/transactions', async (req, res) => {
     const result = await client.query('SELECT * FROM transactions ORDER BY created_at DESC LIMIT 10');
     const transactions = result.rows.map(row => ({
       ...row,
-      data: row.data ? JSON.parse(row.data) : null
+      tx_data: row.tx_data
     }));
     console.log(`Fetched ${transactions.length} transactions`);
     res.json(transactions);
