@@ -50,7 +50,7 @@ async function initDatabase() {
   try {
     console.log('Attempting to create or update transactions table...');
     
-    // Проверяем существование таблицы
+    // Check for table existence
     const tableExists = await client.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -61,7 +61,7 @@ async function initDatabase() {
     if (tableExists.rows[0].exists) {
       console.log('Transactions table exists, checking columns...');
       
-      // Проверяем наличие колонки data
+      // Check for 'data' column existence
       const dataColumnExists = await client.query(`
         SELECT EXISTS (
           SELECT FROM information_schema.columns 
@@ -69,7 +69,7 @@ async function initDatabase() {
         );
       `);
 
-      // Проверяем наличие колонки tx_data
+      // Check for 'tx_data' column existence
       const txDataColumnExists = await client.query(`
         SELECT EXISTS (
           SELECT FROM information_schema.columns 
