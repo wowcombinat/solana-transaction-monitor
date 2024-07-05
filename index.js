@@ -49,27 +49,54 @@ async function initDatabase() {
   const client = await pool.connect();
   try {
     console.log('Attempting to create or update transactions table...');
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS transactions (
-        id SERIAL PRIMARY KEY,
-        signature TEXT UNIQUE,
-        tx_data JSON,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
     
-    // Проверяем наличие колонки data и переименовываем её в tx_data, если она существует
-    const checkDataColumn = await client.query(`
-      SELECT column_name 
-      FROM information_schema.columns 
-      WHERE table_name='transactions' AND column_name='data'
+    // Проверяем существование таблицы
+    const tableExists = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'transactions'
+      );
     `);
-    
-    if (checkDataColumn.rows.length > 0) {
-      console.log('Renaming data column to tx_data...');
-      await client.query('ALTER TABLE transactions RENAME COLUMN data TO tx_data');
+
+    if (tableExists.rows[0].exists) {
+      console.log('Transactions table exists, checking columns...');
+      
+      // Проверяем наличие колонки data
+      const dataColumnExists = await client.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.columns 
+          WHERE table_name = 'transactions' AND column_name = 'data'
+        );
+      `);
+
+      // Проверяем наличие колонки tx_data
+      const txDataColumnExists = await client.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.columns 
+          WHERE table_name = 'transactions' AND column_name = 'tx_data'
+        );
+      `);
+
+      if (dataColumnExists.rows[0].exists && !txDataColumnExists.rows[0].exists) {
+        console.log('Renaming data column to tx_data...');
+        await client.query('ALTER TABLE transactions RENAME COLUMN data TO tx_data');
+      } else if (!txDataColumnExists.rows[0].exists) {
+        console.log('Adding tx_data column...');
+        await client.query('ALTER TABLE transactions ADD COLUMN tx_data JSON');
+      }
+
+    } else {
+      console.log('Creating transactions table...');
+      await client.query(`
+        CREATE TABLE transactions (
+          id SERIAL PRIMARY KEY,
+          signature TEXT UNIQUE,
+          tx_data JSON,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
     }
-    
+
     await client.query(`CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions (created_at DESC)`);
     console.log('Transactions table and index created or updated successfully');
   } catch (err) {
