@@ -7,16 +7,25 @@
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
     <style>
         body {
+            background-color: #000;
+            color: #0f0;
+            font-family: 'Courier New', Courier, monospace;
             padding-top: 20px;
         }
         .container {
             max-width: 800px;
         }
         .card {
+            background-color: #111;
+            border: 1px solid #0f0;
             margin-bottom: 20px;
         }
+        .card-title {
+            color: #0f0;
+        }
         pre {
-            background-color: #f8f9fa;
+            background-color: #111;
+            color: #0f0;
             padding: 10px;
             border-radius: 5px;
             overflow: auto;
@@ -51,12 +60,12 @@
                 mintDetails.className = 'card-text';
 
                 const postTokenBalances = tx.tx_data.meta?.postTokenBalances || [];
-                const mintInfo = postTokenBalances.map(balance => balance.mint);
+                const mintInfo = [...new Set(postTokenBalances.map(balance => balance.mint))];
 
                 if (mintInfo.length > 0) {
                     mintInfo.forEach(mint => {
                         const mintElement = document.createElement('p');
-                        mintElement.innerHTML = `<strong>Mint:</strong> ${mint}`;
+                        mintElement.innerHTML = `<strong>Mint:</strong> ${mint}<br><strong>Created At:</strong> ${new Date(tx.tx_data.blockTime * 1000).toLocaleString()}`;
                         mintDetails.appendChild(mintElement);
                     });
                 } else {
