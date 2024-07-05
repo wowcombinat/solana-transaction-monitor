@@ -268,18 +268,18 @@ app.get('/api/tokens', async (req, res) => {
         const response = {
       tokens,
       total,
-      totalPages: Math.ceil(total / limit),
-      currentPage: parseInt(page, 10)
-    };
+          totalPages: Math.ceil(total / limit),
+    currentPage: parseInt(page, 10)
+  };
 
-    console.log('Sending response:', JSON.stringify(response));
-    res.json(response);
-  } catch (err) {
-    console.error('Error fetching token history:', err);
-    res.status(500).json({ error: "Error fetching token history", details: err.message, stack: err.stack });
-  } finally {
-    client.release();
-  }
+  console.log('Sending response:', JSON.stringify(response));
+  res.json(response);
+} catch (err) {
+  console.error('Error fetching token history:', err);
+  res.status(500).json({ error: "Error fetching token history", details: err.message, stack: err.stack });
+} finally {
+  client.release();
+}
 });
 
 app.get('/api/token-transactions/:mint', async (req, res) => {
