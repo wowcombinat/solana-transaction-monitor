@@ -1,35 +1,14 @@
--- Создание таблицы transactions
-CREATE TABLE IF NOT EXISTS transactions (
-    id SERIAL PRIMARY KEY,
-    signature TEXT UNIQUE,
-    tx_data JSONB,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+-- Обновление таблицы transactions
+ALTER TABLE transactions
+ADD COLUMN IF NOT EXISTS instruction TEXT,
+ADD COLUMN IF NOT EXISTS logs JSON;
 
--- Создание таблицы token_history
-CREATE TABLE IF NOT EXISTS token_history (
-    id SERIAL PRIMARY KEY,
-    mint TEXT UNIQUE,
-    holders NUMERIC,
-    sales INTEGER,
-    purchases INTEGER,
-    price NUMERIC,
-    relationships JSONB,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    symbol TEXT,
-    timestamp TIMESTAMP
-);
+-- Обновление таблицы token_history
+ALTER TABLE token_history
+ADD COLUMN IF NOT EXISTS symbol TEXT,
+ADD COLUMN IF NOT EXISTS timestamp TIMESTAMP;
 
--- Создание таблицы mint_transactions
-CREATE TABLE IF NOT EXISTS mint_transactions (
-    id SERIAL PRIMARY KEY,
-    mint TEXT,
-    signature TEXT UNIQUE,
-    details JSONB,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Создание индексов
+-- Создание индексов, если они еще не существуют
 CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_token_history_created_at ON token_history (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_mint_transactions_created_at ON mint_transactions (created_at DESC);
@@ -43,11 +22,11 @@ VALUES
 ON CONFLICT (mint) DO NOTHING;
 
 -- Вставка тестовых данных в transactions
-INSERT INTO transactions (signature, tx_data)
+INSERT INTO transactions (signature, tx_data, instruction, logs)
 VALUES
-    ('sig1', '{"blockTime": 1625097600, "transaction": {"message": {"instructions": []}}}'),
-    ('sig2', '{"blockTime": 1625184000, "transaction": {"message": {"instructions": []}}}'),
-    ('sig3', '{"blockTime": 1625270400, "transaction": {"message": {"instructions": []}}}')
+    ('sig1', '{"blockTime": 1625097600, "transaction": {"message": {"instructions": []}}}', 'instruction1', '{"log": "log1"}'),
+    ('sig2', '{"blockTime": 1625184000, "transaction": {"message": {"instructions": []}}}', 'instruction2', '{"log": "log2"}'),
+    ('sig3', '{"blockTime": 1625270400, "transaction": {"message": {"instructions": []}}}', 'instruction3', '{"log": "log3"}')
 ON CONFLICT (signature) DO NOTHING;
 
 -- Вставка тестовых данных в mint_transactions
