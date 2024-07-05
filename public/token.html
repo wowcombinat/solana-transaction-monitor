@@ -3,135 +3,97 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Token Transactions</title>
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
+    <title>Token Details</title>
     <style>
         body {
-            background-color: #000;
-            color: #0f0;
+            background-color: black;
+            color: green;
             font-family: 'Courier New', Courier, monospace;
-            padding-top: 20px;
-            overflow-x: hidden;
-        }
-        .container {
-            max-width: 800px;
-        }
-        .card {
-            background-color: #111;
-            border: 1px solid #0f0;
-            margin-bottom: 20px;
-        }
-        .card-title {
-            color: #0f0;
         }
         table {
             width: 100%;
-            margin-top: 20px;
+            border-collapse: collapse;
         }
         th, td {
-            padding: 10px;
-            border: 1px solid #0f0;
+            border: 1px solid green;
+            padding: 8px;
+            text-align: left;
         }
         th {
-            background-color: #222;
+            background-color: #004400;
         }
-        td {
-            background-color: #111;
-        }
-        .pagination {
+        #navigation {
             display: flex;
-            justify-content: center;
+            justify-content: space-between;
             margin-top: 20px;
         }
-        .page-item {
-            margin: 0 5px;
-        }
-        .page-link {
-            color: #0f0;
-            background-color: #111;
-            border: 1px solid #0f0;
-            cursor: pointer;
-        }
-        #home-button {
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            background-color: #0f0;
-            color: #000;
-            border: none;
+        .button {
+            background-color: green;
+            color: black;
             padding: 10px 20px;
-            cursor: pointer;
-            font-size: 16px;
-            transition: transform 0.5s;
-        }
-        #home-button:hover {
-            transform: scale(1.1);
-        }
-        #home-button:active {
-            transform: scale(0.9);
+            text-decoration: none;
+            font-weight: bold;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1 class="text-center">Token Transactions</h1>
-        <div id="token-transactions" class="mt-4"></div>
-        <div class="pagination">
-            <button class="page-link" id="prev-page">Previous</button>
-            <button class="page-link" id="next-page">Next</button>
-        </div>
-        <button id="home-button">HOME</button>
+    <h1>Token Details</h1>
+    <a href="/" class="button">HOME</a>
+    <table>
+        <thead>
+            <tr>
+                <th>Signature</th>
+                <th>Details</th>
+            </tr>
+        </thead>
+        <tbody id="token-transactions">
+            <!-- Rows will be added here dynamically -->
+        </tbody>
+    </table>
+    <div id="navigation">
+        <a href="#" id="previous" class="button">Previous</a>
+        <span id="page-info"></span>
+        <a href="#" id="next" class="button">Next</a>
     </div>
-
     <script>
         const urlParams = new URLSearchParams(window.location.search);
         const mint = urlParams.get('mint');
-        let currentPage = 1;
+        let currentPage = parseInt(urlParams.get('page') || '1');
 
         async function fetchTokenTransactions(page) {
-            const response = await fetch(`/api/token-transactions/${mint}?page=${page}`);
-            const transactions = await response.json();
-            console.log(transactions); // Логируем полученные данные для проверки
-            const tokenTransactionsDiv = document.getElementById('token-transactions');
-            tokenTransactionsDiv.innerHTML = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Signature</th>
-                            <th>Details</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${transactions.map(tx => `
-                            <tr>
-                                <td>${tx.signature}</td>
-                                <td><pre>${JSON.stringify(tx.details, null, 2)}</pre></td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
+            const response = await fetch(`/api/token-transactions/${mint}?page=${page}&limit=10`);
+            const data = await response.json();
+            const tbody = document.getElementById('token-transactions');
+            tbody.innerHTML = '';
+
+            data.transactions.forEach(tx => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${tx.signature}</td>
+                    <td><pre>${JSON.stringify(tx.details, null, 2)}</pre></td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            document.getElementById('page-info').innerText = `Page ${data.currentPage} of ${data.totalPages}`;
+
+            document.getElementById('previous').style.display = data.currentPage > 1 ? 'inline-block' : 'none';
+            document.getElementById('next').style.display = data.currentPage < data.totalPages ? 'inline-block' : 'none';
         }
 
-        document.getElementById('prev-page').addEventListener('click', () => {
+        document.getElementById('previous').addEventListener('click', () => {
             if (currentPage > 1) {
                 currentPage--;
                 fetchTokenTransactions(currentPage);
             }
         });
 
-        document.getElementById('next-page').addEventListener('click', () => {
+        document.getElementById('next').addEventListener('click', () => {
             currentPage++;
             fetchTokenTransactions(currentPage);
         });
 
-        document.getElementById('home-button').addEventListener('click', () => {
-            window.location.href = '/';
-        });
-
-        document.addEventListener('DOMContentLoaded', () => {
-            fetchTokenTransactions(currentPage);
-        });
+        fetchTokenTransactions(currentPage);
     </script>
 </body>
 </html>
