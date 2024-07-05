@@ -1,7 +1,12 @@
-CREATE TABLE mint_transactions (
+CREATE TABLE token_history (
   id SERIAL PRIMARY KEY,
-  mint TEXT,
-  signature TEXT UNIQUE,
-  details JSON,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  mint TEXT UNIQUE,
+  holders NUMERIC,
+  sales INTEGER,
+  purchases INTEGER,
+  price NUMERIC,
+  relationships JSON,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  symbol TEXT,
+  timestamp TIMESTAMP
 );
