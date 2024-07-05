@@ -55,6 +55,8 @@ async function initDatabase() {
         id SERIAL PRIMARY KEY,
         signature TEXT UNIQUE,
         tx_data JSON,
+        instruction TEXT,
+        logs JSON,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -112,8 +114,8 @@ async function processTransaction(signature) {
       const txInfo = await retryWithBackoff(() => connection.getParsedTransaction(signature, { maxSupportedTransactionVersion: 0 }));
 
       if (txInfo) {
-        await client.query('INSERT INTO transactions(signature, tx_data) VALUES($1, $2)', 
-          [signature, JSON.stringify(txInfo)]);
+        await client.query('INSERT INTO transactions(signature, tx_data, instruction, logs) VALUES($1, $2, $3, $4)', 
+          [signature, JSON.stringify(txInfo), JSON.stringify(txInfo.transaction.message.instructions), JSON.stringify(txInfo.meta.logMessages)]);
         console.log(`Saved transaction: ${signature}`);
 
         const mintInstructions = txInfo.transaction.message.instructions.filter(
@@ -124,7 +126,7 @@ async function processTransaction(signature) {
           if (inst.parsed?.type === 'mintTo' && inst.parsed.info.mint) {
             const mint = inst.parsed.info.mint;
             const symbol = inst.parsed.info.symbol || 'Unknown';
-            const timestamp = txInfo.blockTime ? new Date(txInfo.blockTime * 1000).toISOString() : new Date().toISOString();
+            const timestamp = txInfo.blockTime ? new Date(txInfo.blockTime * 1000) : new Date();
             
             await client.query(`
               INSERT INTO mint_transactions(mint, signature, details)
@@ -134,13 +136,13 @@ async function processTransaction(signature) {
 
             console.log(`Attempting to insert/update token: ${mint}`);
             await client.query(`
-              INSERT INTO token_history(mint, symbol, timestamp, holders, sales, purchases, price)
-              VALUES($1, $2, $3, 1, 0, 0, 0)
+              INSERT INTO token_history(mint, symbol, timestamp, holders, sales, purchases, price, relationships)
+              VALUES($1, $2, $3, 1, 0, 0, 0, '{}')
               ON CONFLICT (mint) 
               DO UPDATE SET 
-                symbol = EXCLUDED.symbol,
-                timestamp = EXCLUDED.timestamp,
-                holders = token_history.holders + 1
+                symbol = COALESCE(EXCLUDED.symbol, token_history.symbol),
+                timestamp = GREATEST(EXCLUDED.timestamp, token_history.timestamp),
+                holders = COALESCE(token_history.holders, 0) + 1
             `, [mint, symbol, timestamp]);
             
             const checkResult = await client.query('SELECT * FROM token_history WHERE mint = $1', [mint]);
@@ -250,13 +252,14 @@ app.get('/api/tokens', async (req, res) => {
     const result = await client.query(`
       SELECT mint, holders, sales, purchases, price, relationships, symbol, timestamp
       FROM token_history
+      WHERE timestamp IS NOT NULL
       ORDER BY timestamp DESC
       LIMIT $1 OFFSET $2
     `, [limit, offset]);
 
     console.log(`Query result: ${result.rows.length} rows`);
 
-    const totalResult = await client.query('SELECT COUNT(*) FROM token_history');
+    const totalResult = await client.query('SELECT COUNT(*) FROM token_history WHERE timestamp IS NOT NULL');
     const total = parseInt(totalResult.rows[0].count, 10);
 
     console.log(`Total records: ${total}`);
