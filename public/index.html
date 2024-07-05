@@ -11,6 +11,7 @@
             color: #0f0;
             font-family: 'Courier New', Courier, monospace;
             padding-top: 20px;
+            overflow: hidden;
         }
         .container {
             max-width: 800px;
@@ -39,12 +40,31 @@
             border-radius: 5px;
             overflow: auto;
         }
+        #history-button {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: #0f0;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: transform 0.5s;
+        }
+        #history-button:hover {
+            transform: scale(1.1);
+        }
+        #history-button:active {
+            transform: scale(0.9);
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1 class="text-center">Solana Transaction Monitor</h1>
         <div id="transactions" class="mt-4"></div>
+        <button id="history-button">History</button>
     </div>
 
     <script>
@@ -131,6 +151,10 @@
                     document.location.reload();
                 }, 5000);
             };
+        });
+
+        document.getElementById('history-button').addEventListener('click', () => {
+            window.location.href = '/history';
         });
     </script>
 </body>
