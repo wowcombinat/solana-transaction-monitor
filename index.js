@@ -48,94 +48,49 @@ async function initDatabase() {
   console.log('Initializing database...');
   const client = await pool.connect();
   try {
-    console.log('Attempting to create or update transactions table...');
-    
-    const tableExists = await client.query(`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_name = 'transactions'
+    console.log('Attempting to create or update transactions and token_history tables...');
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS transactions (
+        id SERIAL PRIMARY KEY,
+        signature TEXT UNIQUE,
+        tx_data JSON,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
-    if (tableExists.rows[0].exists) {
-      console.log('Transactions table exists, checking columns...');
-      
-      const dataColumnExists = await client.query(`
-        SELECT EXISTS (
-          SELECT FROM information_schema.columns 
-          WHERE table_name = 'transactions' AND column_name = 'data'
-        );
-      `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS token_history (
+        id SERIAL PRIMARY KEY,
+        mint TEXT UNIQUE,
+        holders NUMERIC,
+        sales INTEGER,
+        purchases INTEGER,
+        price NUMERIC,
+        relationships JSON,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        symbol TEXT,
+        timestamp TIMESTAMP
+      );
+    `);
 
-      const txDataColumnExists = await client.query(`
-        SELECT EXISTS (
-          SELECT FROM information_schema.columns 
-          WHERE table_name = 'transactions' AND column_name = 'tx_data'
-        );
-      `);
-
-      if (dataColumnExists.rows[0].exists && !txDataColumnExists.rows[0].exists) {
-        console.log('Renaming data column to tx_data...');
-        await client.query('ALTER TABLE transactions RENAME COLUMN data TO tx_data');
-      } else if (!txDataColumnExists.rows[0].exists) {
-        console.log('Adding tx_data column...');
-        await client.query('ALTER TABLE transactions ADD COLUMN tx_data JSON');
-      }
-
-    } else {
-      console.log('Creating transactions table...');
-      await client.query(`
-        CREATE TABLE transactions (
-          id SERIAL PRIMARY KEY,
-          signature TEXT UNIQUE,
-          tx_data JSON,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-    }
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS mint_transactions (
+        id SERIAL PRIMARY KEY,
+        mint TEXT,
+        signature TEXT UNIQUE,
+        details JSON,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
 
     await client.query(`CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions (created_at DESC)`);
-    console.log('Transactions table and index created or updated successfully');
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_token_history_created_at ON token_history (created_at DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_mint_transactions_created_at ON mint_transactions (created_at DESC)`);
+
+    console.log('Tables and indexes created or updated successfully');
   } catch (err) {
     console.error('Error initializing database:', err);
-  } finally {
-    client.release();
-  }
-}
-
-async function initTokenHistoryTable() {
-  console.log('Initializing token history table...');
-  const client = await pool.connect();
-  try {
-    console.log('Attempting to create or update token history table...');
-    
-    const tableExists = await client.query(`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_name = 'token_history'
-      );
-    `);
-
-    if (!tableExists.rows[0].exists) {
-      console.log('Creating token history table...');
-      await client.query(`
-        CREATE TABLE token_history (
-          id SERIAL PRIMARY KEY,
-          mint TEXT UNIQUE,
-          holders NUMERIC,
-          sales INTEGER,
-          purchases INTEGER,
-          price NUMERIC,
-          relationships JSON,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-    }
-
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_token_history_created_at ON token_history (created_at DESC)`);
-    console.log('Token history table and index created successfully');
-  } catch (err) {
-    console.error('Error initializing token history table:', err);
   } finally {
     client.release();
   }
@@ -147,55 +102,40 @@ app.use(express.json());
 const transactionQueue = [];
 let isProcessing = false;
 
-async function processTransaction(signature, wss) {
+async function processTransaction(signature) {
   console.log('Processing transaction:', signature);
   const client = await pool.connect();
   try {
     const existingTx = await client.query('SELECT * FROM transactions WHERE signature = $1', [signature]);
-    
+
     if (existingTx.rows.length === 0) {
       const txInfo = await retryWithBackoff(() => connection.getParsedTransaction(signature, { maxSupportedTransactionVersion: 0 }));
-      
+
       if (txInfo) {
         await client.query('INSERT INTO transactions(signature, tx_data) VALUES($1, $2)', 
           [signature, JSON.stringify(txInfo)]);
         console.log(`Saved transaction: ${signature}`);
 
-        // Extract and save mint data to token history
-        const postTokenBalances = txInfo.meta?.postTokenBalances || [];
-        const mintInfo = [...new Set(postTokenBalances.map(balance => balance.mint))];
+        const mintInstructions = txInfo.transaction.message.instructions.filter(
+          inst => inst.programId.toBase58() === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        );
 
-        if (mintInfo.length > 0) {
-          for (const mint of mintInfo) {
-            await client.query(`
-              INSERT INTO token_history (mint, holders, sales, purchases, price, relationships)
-              VALUES ($1, 0, 0, 0, 0, '[]')
-              ON CONFLICT (mint) DO NOTHING
-            `, [mint]);
-
-            // Process and save transaction details for the mint
-            const transactionDetails = txInfo.transaction.message.instructions.map(inst => ({
-              programId: inst.programId.toBase58(),
-              data: inst.data,
-              accounts: inst.keys.map(key => key.pubkey.toBase58())
-            }));
-
-            await client.query(`
-              INSERT INTO mint_transactions (mint, signature, details)
-              VALUES ($1, $2, $3)
-              ON CONFLICT (signature) DO NOTHING
-            `, [mint, signature, JSON.stringify(transactionDetails)]);
+        for (const inst of mintInstructions) {
+          if (inst.parsed?.type === 'mintTo' && inst.parsed.info.mint) {
+            const mint = inst.parsed.info.mint;
+            const symbol = inst.parsed.info.symbol; // example of how to capture the symbol, update accordingly
+            const timestamp = txInfo.blockTime ? new Date(txInfo.blockTime * 1000).toISOString() : new Date().toISOString();
+            await client.query(
+              'INSERT INTO mint_transactions(mint, signature, details) VALUES($1, $2, $3) ON CONFLICT (signature) DO NOTHING', 
+              [mint, signature, JSON.stringify(inst)]
+            );
+            await client.query(
+              'INSERT INTO token_history(mint, symbol, timestamp) VALUES($1, $2, $3) ON CONFLICT (mint) DO NOTHING', 
+              [mint, symbol, timestamp]
+            );
+            console.log(`Saved mint transaction: ${signature}`);
           }
         }
-
-        wss.clients.forEach(client => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({
-              signature,
-              tx_data: txInfo
-            }));
-          }
-        });
       } else {
         console.log(`No transaction info found for signature: ${signature}`);
       }
@@ -209,19 +149,19 @@ async function processTransaction(signature, wss) {
   }
 }
 
-async function processQueue(wss) {
+async function processQueue() {
   if (isProcessing || transactionQueue.length === 0) return;
-  
+
   isProcessing = true;
   while (transactionQueue.length > 0) {
     const signature = transactionQueue.shift();
-    await processTransaction(signature, wss);
-    await delay(5000);
+    await processTransaction(signature);
+    await delay(5000); // Wait 5 seconds between processing transactions
   }
   isProcessing = false;
 }
 
-function setupWebSocket(wss) {
+function setupWebSocket() {
   console.log('Setting up WebSocket...');
   const ws = new WebSocket(SOLANA_RPC_URL.replace('https', 'wss'));
 
@@ -248,7 +188,7 @@ function setupWebSocket(wss) {
     if (message.method === 'logsNotification') {
       const signature = message.params.result.value.signature;
       transactionQueue.push(signature);
-      processQueue(wss);
+      processQueue();
     }
   });
 
@@ -258,7 +198,7 @@ function setupWebSocket(wss) {
 
   ws.on('close', () => {
     console.log('WebSocket connection closed. Reconnecting...');
-    setTimeout(() => setupWebSocket(wss), 5000);
+    setTimeout(setupWebSocket, 5000);
   });
 }
 
@@ -291,15 +231,18 @@ app.get('/api/tokens', async (req, res) => {
   try {
     console.log(`Fetching token history for page ${page} with limit ${limit}`);
     const result = await client.query(`
-      SELECT mint, holders, sales, purchases, price, relationships
+      SELECT mint, holders, sales, purchases, price, relationships, symbol, timestamp
       FROM token_history
       ORDER BY created_at DESC
       LIMIT $1 OFFSET $2
     `, [limit, offset]);
 
+    const totalResult = await client.query('SELECT COUNT(*) FROM token_history');
+    const total = parseInt(totalResult.rows[0].count, 10);
+
     const tokens = result.rows;
     console.log(`Fetched ${tokens.length} tokens`);
-    res.json(tokens);
+    res.json({ tokens, total, totalPages: Math.ceil(total / limit), currentPage: parseInt(page, 10) });
   } catch (err) {
     console.error('Error fetching token history:', err);
     res.status(500).json({ error: "Error fetching token history", details: err.message });
@@ -324,9 +267,12 @@ app.get('/api/token-transactions/:mint', async (req, res) => {
       LIMIT $2 OFFSET $3
     `, [mint, limit, offset]);
 
+        const totalResult = await client.query('SELECT COUNT(*) FROM mint_transactions WHERE mint = $1', [mint]);
+    const total = parseInt(totalResult.rows[0].count, 10);
+
     const transactions = result.rows;
     console.log(`Fetched ${transactions.length} transactions for mint ${mint}`);
-    res.json(transactions);
+    res.json({ transactions, total, totalPages: Math.ceil(total / limit), currentPage: parseInt(page, 10) });
   } catch (err) {
     console.error('Error fetching transactions for mint:', err);
     res.status(500).json({ error: "Error fetching transactions for mint", details: err.message });
@@ -343,7 +289,7 @@ app.get('/history', (req, res) => {
   res.sendFile(__dirname + '/public/history.html');
 });
 
-app.get('/token/:mint', (req, res) => {
+app.get('/token', (req, res) => {
   res.sendFile(__dirname + '/public/token.html');
 });
 
@@ -351,19 +297,8 @@ const server = app.listen(port, async () => {
   console.log(`Server starting on port ${port}`);
   try {
     await initDatabase();
-    await initTokenHistoryTable();
     console.log('Database initialized, starting WebSocket connection...');
-    const wss = new WebSocket.Server({ server });
-    setupWebSocket(wss);
-    wss.on('connection', (ws) => {
-      console.log('Client connected');
-      ws.on('message', (message) => {
-        console.log('Received message:', message);
-      });
-      ws.on('close', () => {
-        console.log('Client disconnected');
-      });
-    });
+    setupWebSocket();
     console.log(`Server is running on port ${port}`);
   } catch (error) {
     console.error('Error during server startup:', error);
